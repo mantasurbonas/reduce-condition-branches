@@ -1,0 +1,9 @@
+# Include any Declarative YAML format recipes here, as per:
+# https://docs.openrewrite.org/reference/yaml-format-reference
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: lt.twoday.ReduceConditionBranches
+displayName: ReduceConditionBranches
+description: Reduces conditional branches.
+recipeList:
+  - lt.twoday.ReduceConditionBranches
