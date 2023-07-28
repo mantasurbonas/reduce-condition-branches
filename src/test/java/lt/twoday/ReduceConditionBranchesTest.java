@@ -512,5 +512,89 @@ class ReduceConditionBranchesTest implements RewriteTest {
                 """)
             );
     }
+    
+    @Test
+    void asdf() {
+        rewriteRun(
+                createSpec(),
+                java(
+"""
+class A {
+    public void analyze(Object element) {
+        if (element != null) {
+            if (!(element instanceof Double)) {
+                if (element instanceof String) {
+                    String s = element.toString();
+                    if (s.length() != 0) {
+                        if (s.startsWith("H"))
+                            System.out.println("analyzing H word");
+                        else if (s.startsWith("A"))
+                            System.out.println("analyzing A word");
+                        else
+                            System.out.println("analyzing any other word");
+                    } else {
+                        System.out.println("empty string, will not analyze");
+                        return;
+                    }
+                } else if (element instanceof Integer) {
+                    Integer i = (Integer) element;
+                    System.out.println("analyzing integer " + i);
+                    return;
+                } else if (element instanceof Float) {
+                    System.out.println("analyzing Float! " + element);
+                    return;
+                } else {
+                    System.out.println("analyzing unknown type of element " + element);
+                    return;
+                }
+            } else {
+                throw new IllegalArgumentException("handling of Double is not impemented!");
+            }
+        } else {
+            throw new IllegalArgumentException("param must not be null!");
+        }
+    }
+}
+""",
+"""
+class A {
+    public void analyze(Object element) {
+        if (element == null) {
+            throw new IllegalArgumentException("param must not be null!");
+        }
+        if (element instanceof Double) {
+            throw new IllegalArgumentException("handling of Double is not impemented!");
+        }
+        if (!(element instanceof String)) { 
+            if (element instanceof Integer) {
+                Integer i = (Integer) element;
+                System.out.println("analyzing integer " + i);
+                return;
+            } else 
+            if (element instanceof Float) {
+                System.out.println("analyzing Float! " + element);
+                return;
+            } else {
+                System.out.println("analyzing unknown type of element " + element);
+                return;
+            }
+        }
+        String s = element.toString();
+        if (s.length() == 0)) {
+            System.out.println("empty string, will not analyze");
+            return;
+        }
+        if (s.startsWith("H"))
+            System.out.println("analyzing H word"); 
+        else if (s.startsWith("A"))
+            System.out.println("analyzing A word");
+        else
+            System.out.println("analyzing any other word");
+    }
+}
+"""
+                ));
+    }
+    
 }
 

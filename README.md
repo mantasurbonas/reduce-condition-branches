@@ -1,12 +1,93 @@
-# building of this plugin
+## motivation
 
-Gradle will build java 11 version of this plugin:  
+Readability of such code sucks:  
+
+```java
+    public void analyze(Object element) {
+        if (element != null) {
+            if (!(element instanceof Double)) {
+                if (element instanceof String) {
+                    String s = element.toString();
+                    if (s.length() != 0) {
+                        if (s.startsWith("H"))
+                            System.out.println("analyzing H word");
+                        else if (s.startsWith("A"))
+                            System.out.println("analyzing A word");
+                        else
+                            System.out.println("analyzing any other word");
+                    } else {
+                        System.out.println("empty string, will not analyze");
+                        return;
+                    }
+                } else if (element instanceof Integer) {
+                    Integer i = (Integer) element;
+                    System.out.println("analyzing integer " + i);
+                    return;
+                } else if (element instanceof Float) {
+                    System.out.println("analyzing Float! " + element);
+                    return;
+                } else {
+                    System.out.println("analyzing unknown type of element " + element);
+                    return;
+                }
+            } else {
+                throw new IllegalArgumentException("handling of Double is not impemented!");
+            }
+        } else {
+            throw new IllegalArgumentException("param must not be null!");
+        }
+    }
+```
+
+This Gradle \ Maven plugin automagically rewrites the above code into a more human readable form : 
+
+```java
+    public void analyze(Object element) {
+        if (element == null)
+            throw new IllegalArgumentException("param must not be null!");
+        
+        if (element instanceof Double) 
+            throw new IllegalArgumentException("handling of Double is not impemented!");
+        
+        if (!(element instanceof String)) { 
+            if (element instanceof Integer) {
+                Integer i = (Integer) element;
+                System.out.println("analyzing integer " + i);
+                return;
+            } else 
+            if (element instanceof Float) {
+                System.out.println("analyzing Float! " + element);
+                return;
+            } else {
+                System.out.println("analyzing unknown type of element " + element);
+                return;
+            }
+        }
+        
+        String s = element.toString();
+        if (s.length() == 0) {
+            System.out.println("empty string, will not analyze");
+            return;
+        }
+    
+        if (s.startsWith("H"))
+            System.out.println("analyzing H word"); 
+        else if (s.startsWith("A"))
+            System.out.println("analyzing A word");
+        else
+            System.out.println("analyzing any other word");
+    }
+```
+
+## building of this plugin
+
+Gradle will test and build this plugin:  
 
 ```
 gradlew publishToMavenLocal
 ```
 
-You can build this plugin for Java version 7, but to do that use Maven and skip unit tests:
+You can build this plugin for Java version 11, but to do that you'll have use Maven build and skip unit tests:
 
 ```
 mvn clean install -Dmaven.test.skip=true 

@@ -2,4 +2,9 @@ build/
 target/
 .gradle/
 .idea/
+.bin/
+bin/
 out/
+.classpath
+.project
+.settings/

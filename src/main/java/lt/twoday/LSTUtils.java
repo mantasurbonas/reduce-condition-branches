@@ -4,6 +4,7 @@ import static org.openrewrite.Tree.randomId;
 
 import java.util.List;
 
+import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.J.ControlParentheses;
@@ -106,6 +107,26 @@ public class LSTUtils {
                         ifCondition.withPrefix(Space.EMPTY), 
                         ifCondition.getType()))
                 ;
+    }
+    
+    public static boolean isLiteralTrue(Expression expression) {
+        return expression instanceof J.Literal 
+            && ((J.Literal) expression).getValue() == Boolean.valueOf(true);
+    }
+
+    public static boolean isLiteralFalse(Expression expression) {
+        return expression instanceof J.Literal 
+            && ((J.Literal) expression).getValue() == Boolean.valueOf(false);
+    }
+    
+    public static J removeAllSpace(J j) {
+        //noinspection ConstantConditions
+        return new JavaIsoVisitor<Integer>() {
+            @Override
+            public Space visitSpace(Space space, Space.Location loc, Integer integer) {
+                return Space.EMPTY;
+            }
+        }.visit(j, 0);
     }
 
 }

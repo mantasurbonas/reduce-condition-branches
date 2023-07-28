@@ -18,11 +18,14 @@ package lt.twoday;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.openrewrite.Cursor;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Recipe;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.java.InvertCondition;
-import org.openrewrite.java.JavaIsoVisitor;
+import org.openrewrite.java.JavaVisitor;
+import org.openrewrite.java.UnwrapParentheses;
+import org.openrewrite.java.format.AutoFormatVisitor;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.J.Block;
 import org.openrewrite.java.tree.J.If;
@@ -210,9 +213,9 @@ public class ReduceConditionBranches extends Recipe {
 
     @Override
     public TreeVisitor<?, ExecutionContext> getVisitor() {
-        return new JavaIsoVisitor<ExecutionContext>() {
+        return new JavaVisitor<ExecutionContext>() {
             @Override
-            public J.CompilationUnit visitCompilationUnit(J.CompilationUnit compUnit, ExecutionContext executionContext) {
+            public J visitCompilationUnit(J.CompilationUnit compUnit, ExecutionContext executionContext) {
                 // This next line could be omitted in favor of a breakpoint
                 // if you'd prefer to use the debugger instead.
             	
@@ -222,7 +225,7 @@ public class ReduceConditionBranches extends Recipe {
             }
             
             @Override
-            public MethodDeclaration visitMethodDeclaration(MethodDeclaration method, ExecutionContext executionContext) {                
+            public J visitMethodDeclaration(MethodDeclaration method, ExecutionContext executionContext) {                
                 Block methodBody = method.getBody();
                 if (methodBody == null)
                     return super.visitMethodDeclaration(method, executionContext);
@@ -242,7 +245,7 @@ public class ReduceConditionBranches extends Recipe {
             }
             
             @Override
-            public J.If visitIf(J.If iff, ExecutionContext executionContext) {
+            public J visitIf(J.If iff, ExecutionContext executionContext) {
 				Else elsePart = iff.getElsePart();
 				
 				if (elsePart == null)
@@ -266,6 +269,135 @@ public class ReduceConditionBranches extends Recipe {
 				
 				// leaving if as it was otherwise
             	return super.visitIf(iff, executionContext);
+            }
+            
+            //// copy from Simplify Boolean Expression 
+            private static final String MAYBE_AUTO_FORMAT_ME = "MAYBE_AUTO_FORMAT_ME";
+            
+            @Override
+            public J visitBinary(J.Binary binary, ExecutionContext ctx) {
+                J j = super.visitBinary(binary, ctx);
+                J.Binary asBinary = (J.Binary) j;
+                
+                System.out.println("visiting binary "+asBinary);
+
+                if (asBinary.getOperator() == J.Binary.Type.And) {
+                    if (LSTUtils.isLiteralFalse(asBinary.getLeft())) {
+                        maybeUnwrapParentheses();
+                        j = asBinary.getLeft();
+                    } else 
+                    if (LSTUtils.isLiteralFalse(asBinary.getRight())) {
+                        maybeUnwrapParentheses();
+                        j = asBinary.getRight().withPrefix(asBinary.getRight().getPrefix().withWhitespace(""));
+                    } else 
+                    if (LSTUtils.removeAllSpace(asBinary.getLeft()).printTrimmed(getCursor())
+                            .equals(
+                        LSTUtils.removeAllSpace(asBinary.getRight()).printTrimmed(getCursor()))) {
+                        maybeUnwrapParentheses();
+                        j = asBinary.getLeft();
+                    }
+                } else 
+                if (asBinary.getOperator() == J.Binary.Type.Or) {
+                    if (LSTUtils.isLiteralTrue(asBinary.getLeft())) {
+                        maybeUnwrapParentheses();
+                        j = asBinary.getLeft();
+                    } else 
+                    if (LSTUtils.isLiteralTrue(asBinary.getRight())) {
+                        maybeUnwrapParentheses();
+                        j = asBinary.getRight().withPrefix(asBinary.getRight().getPrefix().withWhitespace(""));
+                    } else 
+                    if (LSTUtils.removeAllSpace(asBinary.getLeft()).printTrimmed(getCursor())
+                            .equals(LSTUtils.removeAllSpace(asBinary.getRight()).printTrimmed(getCursor()))) {
+                        maybeUnwrapParentheses();
+                        j = asBinary.getLeft();
+                    }
+                } else 
+                if (asBinary.getOperator() == J.Binary.Type.Equal) {
+                    if (LSTUtils.isLiteralTrue(asBinary.getLeft())) {
+                        maybeUnwrapParentheses();
+                        j = asBinary.getRight().withPrefix(asBinary.getRight().getPrefix().withWhitespace(""));
+                    } else 
+                    if (LSTUtils.isLiteralTrue(asBinary.getRight())) {
+                        maybeUnwrapParentheses();
+                        j = asBinary.getLeft();
+                    }
+                } else 
+                if (asBinary.getOperator() == J.Binary.Type.NotEqual) {
+                    System.out.println("It's not equal");
+                    if (LSTUtils.isLiteralFalse(asBinary.getLeft())) {
+                        maybeUnwrapParentheses();
+                        j = asBinary.getRight().withPrefix(asBinary.getRight().getPrefix().withWhitespace(""));
+                    } else 
+                    if (LSTUtils.isLiteralFalse(asBinary.getRight())) {
+                        maybeUnwrapParentheses();
+                        j = asBinary.getLeft();
+                    }
+                }
+                if (asBinary != j) {
+                    System.out.println("Binary changed in visit binary");
+                    getCursor().getParentTreeCursor().putMessage(MAYBE_AUTO_FORMAT_ME, "");
+                }
+                return j;
+            }
+
+            @Override
+            public J postVisit(J tree, ExecutionContext ctx) {
+                J j = super.postVisit(tree, ctx);
+                if (getCursor().pollMessage(MAYBE_AUTO_FORMAT_ME) != null) {
+                    j = new AutoFormatVisitor<>().visit(j, ctx, getCursor().getParentOrThrow());
+                }
+                return j;
+            }
+
+            @Override
+            public J visitUnary(J.Unary unary, ExecutionContext ctx) {
+                J j = super.visitUnary(unary, ctx);
+                J.Unary asUnary = (J.Unary) j;
+
+                System.out.println("visiting unary " + asUnary);
+                
+                if (asUnary.getOperator() == J.Unary.Type.Not) {
+                    System.out.println("it's a unary NOT "+asUnary.getExpression());
+                    
+                    if (LSTUtils.isLiteralTrue(asUnary.getExpression())) {
+                        maybeUnwrapParentheses();
+                        j = ((J.Literal) asUnary.getExpression()).withValue(false).withValueSource("false");
+                    } else 
+                    if (LSTUtils.isLiteralFalse(asUnary.getExpression())) {
+                        maybeUnwrapParentheses();
+                        j = ((J.Literal) asUnary.getExpression()).withValue(true).withValueSource("true");
+                    } else 
+                    if (asUnary.getExpression() instanceof J.Unary) {
+                        System.out.println("It's a unary expression ");
+                         if(((J.Unary) asUnary.getExpression()).getOperator() == J.Unary.Type.Not) {
+                            System.out.println("it's a NOT operator");
+                            maybeUnwrapParentheses();
+                            j = ((J.Unary) asUnary.getExpression()).getExpression();
+                        }
+                    }
+                }
+                if (asUnary != j) {
+                    System.out.println("unary changed in visit unary");
+                    getCursor().getParentTreeCursor().putMessage(MAYBE_AUTO_FORMAT_ME, "");
+                }
+                return j;
+            }
+
+            /**
+             * Specifically for removing immediately-enclosing parentheses on Identifiers and Literals.
+             * This queues a potential unwrap operation for the next visit. After unwrapping something, it's possible
+             * there are more Simplifications this recipe can identify and perform, which is why visitCompilationUnit
+             * checks for any changes to the entire Compilation Unit, and if so, queues up another SimplifyBooleanExpression
+             * recipe call. This convergence loop eventually reconciles any remaining Boolean Expression Simplifications
+             * the recipe can perform.
+             */
+            private void maybeUnwrapParentheses() {
+                System.out.println("maybe unwrap parenthes");
+                Cursor c = getCursor().getParentOrThrow().getParentTreeCursor();
+                if (c.getValue() instanceof J.Parentheses) {
+                    System.out.println("will unwrap parentheses");
+                    doAfterVisit(new UnwrapParentheses<>(c.getValue()));
+                }
             }
 
         };
