@@ -225,7 +225,7 @@ class ReduceConditionBranchesTest implements RewriteTest {
                         void test() {
                             int a = 0;
                             {
-                                if (!(a <= 0)) {
+                                if (a > 0) {
                                     System.out.print("non-negative"); // comment
                                     return;
                                 }
@@ -313,7 +313,7 @@ class ReduceConditionBranchesTest implements RewriteTest {
                         int b = 0;
                         int c = 0;
                         if (a == 0) {
-                            if (!(c == 0)) {
+                            if (c != 0) {
                                 c = 0; // comment
                                 return;
                             }
@@ -360,7 +360,7 @@ class ReduceConditionBranchesTest implements RewriteTest {
                         if (a == 0) {
                             c++;
                         } else {
-                            if (!(a == 1)) {
+                            if (a != 1) {
                                 c = 0;
                                 return;
                             }
@@ -419,7 +419,7 @@ class ReduceConditionBranchesTest implements RewriteTest {
                                 }
                                 if (logbookRecord.length() == 1) {
                                     String label = logbookRecord.substring(0);
-                                    if (!("a".equals(label))) {
+                                    if (!"a".equals(label)) {
                                         return label + "B";
                                     }
                                     label += "A";
@@ -482,7 +482,7 @@ class ReduceConditionBranchesTest implements RewriteTest {
                 """
                 class A {
                     public String getText(Object element) {
-                        if (!(element != null))
+                        if (element == null)
                             return null;
                         try {
                             if (element instanceof String) {
@@ -492,7 +492,7 @@ class ReduceConditionBranchesTest implements RewriteTest {
                                 }
                                 if (logbookRecord.length() == 1) {
                                     String label = logbookRecord.substring(0);
-                                    if (!("a".equals(label))) {
+                                    if (!"a".equals(label)) {
                                         return label + "B";
                                     }
                                     label += "A";
@@ -513,8 +513,41 @@ class ReduceConditionBranchesTest implements RewriteTest {
             );
     }
     
+     @Test
+    void shouldCorrectlyInvertInstanceof() {
+        rewriteRun(
+                createSpec(),
+                java("""
+                        class A{
+                            public static void test(Object a) {
+                                if (! (a instanceof Double))
+                                    ;
+                                else
+                                    throw new RuntimeException("must not be double!");
+                            
+                                if (a instanceof String)
+                                    ;
+                                else
+                                    throw new RuntimeException("must be string!");
+                            }
+                        }
+                        """,
+                        """
+                        class A{
+                            public static void test(Object a) {
+                                if (a instanceof Double)
+                                    throw new RuntimeException("must not be double!");
+                            
+                                if (!(a instanceof String))
+                                    throw new RuntimeException("must be string!");
+                            }
+                        }
+                        """)
+                );
+    }
+    
     @Test
-    void asdf() {
+    void integrationTest() {
         rewriteRun(
                 createSpec(),
                 java(
@@ -522,30 +555,32 @@ class ReduceConditionBranchesTest implements RewriteTest {
 class A {
     public void analyze(Object element) {
         if (element != null) {
-            if (!(element instanceof Double)) {
+            if (! (element instanceof Double)) {
                 if (element instanceof String) {
                     String s = element.toString();
                     if (s.length() != 0) {
-                        if (s.startsWith("H"))
+                        if (s.startsWith("H")) {
                             System.out.println("analyzing H word");
-                        else if (s.startsWith("A"))
+                        } else if (s.startsWith("A")) {
                             System.out.println("analyzing A word");
-                        else
+                        } else
                             System.out.println("analyzing any other word");
                     } else {
                         System.out.println("empty string, will not analyze");
                         return;
                     }
-                } else if (element instanceof Integer) {
-                    Integer i = (Integer) element;
-                    System.out.println("analyzing integer " + i);
-                    return;
-                } else if (element instanceof Float) {
-                    System.out.println("analyzing Float! " + element);
-                    return;
-                } else {
-                    System.out.println("analyzing unknown type of element " + element);
-                    return;
+                } else { 
+                    if (element instanceof Integer) {
+                        Integer i = (Integer) element;
+                        System.out.println("analyzing integer " + i);
+                        return;
+                    } else if (element instanceof Float) {
+                        System.out.println("analyzing Float! " + element);
+                        return;
+                    } else {
+                        System.out.println("analyzing unknown type of element " + element);
+                        return;
+                    }
                 }
             } else {
                 throw new IllegalArgumentException("handling of Double is not impemented!");
@@ -553,6 +588,8 @@ class A {
         } else {
             throw new IllegalArgumentException("param must not be null!");
         }
+        
+        System.out.println("done");
     }
 }
 """,
@@ -570,26 +607,27 @@ class A {
                 Integer i = (Integer) element;
                 System.out.println("analyzing integer " + i);
                 return;
-            } else 
+            } 
             if (element instanceof Float) {
                 System.out.println("analyzing Float! " + element);
                 return;
-            } else {
-                System.out.println("analyzing unknown type of element " + element);
-                return;
             }
+            System.out.println("analyzing unknown type of element " + element);
+            return;
         }
         String s = element.toString();
-        if (s.length() == 0)) {
+        if (s.length() == 0) {
             System.out.println("empty string, will not analyze");
             return;
         }
-        if (s.startsWith("H"))
+        if (s.startsWith("H")) {
             System.out.println("analyzing H word"); 
-        else if (s.startsWith("A"))
+        } else if (s.startsWith("A")) {
             System.out.println("analyzing A word");
-        else
+        } else
             System.out.println("analyzing any other word");
+            
+        System.out.println("done");
     }
 }
 """

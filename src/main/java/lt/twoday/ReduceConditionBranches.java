@@ -18,14 +18,10 @@ package lt.twoday;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.openrewrite.Cursor;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Recipe;
 import org.openrewrite.TreeVisitor;
-import org.openrewrite.java.InvertCondition;
 import org.openrewrite.java.JavaVisitor;
-import org.openrewrite.java.UnwrapParentheses;
-import org.openrewrite.java.format.AutoFormatVisitor;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.J.Block;
 import org.openrewrite.java.tree.J.If;
@@ -64,152 +60,6 @@ public class ReduceConditionBranches extends Recipe {
         
         allStatements.add(i, statement);
     }
-    
-    private static boolean reduceConditionBranches(If ifStatement, List<Statement> allBlockLines, int ifStatementPosition) {
-        Else elsePart = ifStatement.getElsePart();
-        Statement thenPart = ifStatement.getThenPart();
-        
-        if (elsePart == null) {
-            Statement newThenPart = findAndReduceConditionBranches(thenPart);
-            if (newThenPart != thenPart) {
-                allBlockLines.set(ifStatementPosition, ifStatement.withThenPart(newThenPart));
-                return true;
-            }
-            return false;
-        }
-        
-        Statement elseBody = elsePart.getBody();
-        
-        if (LSTUtils.isEmpty(elseBody)) {
-            // elsePart is empty, erasing it
-            J.If modifiedStatement = ifStatement
-                    .withElsePart(null)
-                    .withThenPart( findAndReduceConditionBranches(thenPart) );
-            allBlockLines.set(ifStatementPosition, modifiedStatement);
-                        
-            return true;
-        }
-
-        if (LSTUtils.isEmpty(thenPart)) {
-            // the else part contains logic while the then part is empty - let's replace it with the else branch
-            J.If modifiedStatement = 
-                    ifStatement.withIfCondition( 
-                                LSTUtils.invert(ifStatement.getIfCondition()) 
-                            )
-                        .withThenPart( 
-                                findAndReduceConditionBranches(elseBody) 
-                            )
-                        .withElsePart(null);
-            
-            allBlockLines.set(ifStatementPosition, modifiedStatement);
-            
-            return true;
-        }
-        
-        if (LSTUtils.hasGuaranteedReturn(thenPart)) {
-            // the thenPart has guaranteed return: 
-            // the elsePart shall get flattened.
-            J.If modifiedStatement = 
-                        ifStatement.withIfCondition(
-                                ifStatement.getIfCondition()
-                                ) 
-                            .withThenPart(
-                                findAndReduceConditionBranches(thenPart)
-                                )
-                            .withElsePart(null);
-            
-            allBlockLines.set(ifStatementPosition, modifiedStatement);
-            insertFlattened(allBlockLines, ifStatementPosition+1, findAndReduceConditionBranches(elseBody) );
-            
-            return true;
-        }
-        
-        if (LSTUtils.hasGuaranteedReturn(elseBody)) {
-            // the elsePart has guaranteed return:
-            // make it the thenPart, and flatten the thenPart instead.
-
-            J.If modifiedStatement = 
-                        ifStatement.withIfCondition( 
-                                LSTUtils.invert(ifStatement.getIfCondition()) 
-                                )
-                            .withThenPart(
-                                findAndReduceConditionBranches(elseBody)
-                                )
-                            .withElsePart(null);
-            
-            allBlockLines.set(ifStatementPosition, modifiedStatement);
-            insertFlattened(allBlockLines, ifStatementPosition+1, findAndReduceConditionBranches(thenPart));
-            
-            return true;
-        }
-
-        Statement newElseBody = findAndReduceConditionBranches(elseBody);
-        Statement newThenBody = findAndReduceConditionBranches(thenPart);
-        
-        boolean changed = newElseBody != elseBody || newThenBody != thenPart;
-        
-        if (changed)
-            allBlockLines.set(ifStatementPosition, 
-                              ifStatement
-                                  .withThenPart(newThenBody)
-                                  .withElsePart( elsePart.withBody(newElseBody)) );
-        
-        return changed;
-    }
-    
-    private static Statement findAndReduceConditionBranches(Statement statement) {
-        if (statement instanceof J.Block)
-            return findAndReduceConditionBranches((J.Block) statement);
-        
-        return statement;
-    }
-    
-    private static boolean findAndReduceConditionBranches(List<Statement> statements, int position) {
-        Statement statement = statements.get(position);
-        
-        if (statement instanceof J.If) {
-            J.If iff = (J.If)statement;
-            return reduceConditionBranches(iff, statements, position);
-        }
-        
-        if (statement instanceof J.Block) {
-            Block oldBlock = (J.Block)statement;
-            Block newBlock = findAndReduceConditionBranches(oldBlock);
-            if (newBlock != oldBlock) {
-                statements.set(position, newBlock);
-                return true;
-            }
-        }
-        
-        if (statement instanceof J.Try) {
-            J.Try tryy = (J.Try) statement;
-            Block oldBody = tryy.getBody();
-            Block newBody = findAndReduceConditionBranches(oldBody);
-            if (newBody != oldBody) {
-                statements.set(position, tryy.withBody(newBody));
-                return true;
-            }
-        }
-        
-        return false;
-    }
-    
-    private static Block findAndReduceConditionBranches(Block block) {
-        if (block == null)
-            return block;
-        
-        boolean touched = false;
-
-        List<Statement> statements = new ArrayList<>(block.getStatements());
-        
-        for (int i=0; i < statements.size(); i++) 
-            touched = findAndReduceConditionBranches(statements, i) || touched;
-        
-        if (touched)
-            return block.withStatements(statements);
-        
-        return block;
-    }
 
     @Override
     public TreeVisitor<?, ExecutionContext> getVisitor() {
@@ -230,7 +80,7 @@ public class ReduceConditionBranches extends Recipe {
                 if (methodBody == null)
                     return super.visitMethodDeclaration(method, executionContext);
                 
-                Block reviewed = findAndReduceConditionBranches(methodBody);
+                Block reviewed = findAndReduceConditionBranches(methodBody, executionContext);
                 
                 if (reviewed != methodBody) {
                     method = maybeAutoFormat(
@@ -260,7 +110,7 @@ public class ReduceConditionBranches extends Recipe {
 					// the else part contains logic while the then part is empty - let's replace it with the else branch
 					return super.visitIf(
 							iff.withIfCondition( 
-									InvertCondition.invert(iff.getIfCondition(), getCursor()) 
+									MyInvertCondition.invert(iff.getIfCondition(), getCursor()) 
 										)
 								.withThenPart(elsePart.getBody())
 								.withElsePart(null), 
@@ -271,135 +121,154 @@ public class ReduceConditionBranches extends Recipe {
             	return super.visitIf(iff, executionContext);
             }
             
-            //// copy from Simplify Boolean Expression 
-            private static final String MAYBE_AUTO_FORMAT_ME = "MAYBE_AUTO_FORMAT_ME";
-            
-            @Override
-            public J visitBinary(J.Binary binary, ExecutionContext ctx) {
-                J j = super.visitBinary(binary, ctx);
-                J.Binary asBinary = (J.Binary) j;
+            private boolean reduceConditionBranches(If ifStatement, List<Statement> allBlockLines, int ifStatementPosition, ExecutionContext executionContext) {
+                Else elsePart = ifStatement.getElsePart();
+                Statement thenPart = ifStatement.getThenPart();
                 
-                System.out.println("visiting binary "+asBinary);
-
-                if (asBinary.getOperator() == J.Binary.Type.And) {
-                    if (LSTUtils.isLiteralFalse(asBinary.getLeft())) {
-                        maybeUnwrapParentheses();
-                        j = asBinary.getLeft();
-                    } else 
-                    if (LSTUtils.isLiteralFalse(asBinary.getRight())) {
-                        maybeUnwrapParentheses();
-                        j = asBinary.getRight().withPrefix(asBinary.getRight().getPrefix().withWhitespace(""));
-                    } else 
-                    if (LSTUtils.removeAllSpace(asBinary.getLeft()).printTrimmed(getCursor())
-                            .equals(
-                        LSTUtils.removeAllSpace(asBinary.getRight()).printTrimmed(getCursor()))) {
-                        maybeUnwrapParentheses();
-                        j = asBinary.getLeft();
+                if (elsePart == null) {
+                    Statement newThenPart = findAndReduceConditionBranches(thenPart, executionContext);
+                    if (newThenPart != thenPart) {
+                        allBlockLines.set(ifStatementPosition, 
+                                            ifStatement.withThenPart( newThenPart )
+                                          );
+                        return true;
                     }
-                } else 
-                if (asBinary.getOperator() == J.Binary.Type.Or) {
-                    if (LSTUtils.isLiteralTrue(asBinary.getLeft())) {
-                        maybeUnwrapParentheses();
-                        j = asBinary.getLeft();
-                    } else 
-                    if (LSTUtils.isLiteralTrue(asBinary.getRight())) {
-                        maybeUnwrapParentheses();
-                        j = asBinary.getRight().withPrefix(asBinary.getRight().getPrefix().withWhitespace(""));
-                    } else 
-                    if (LSTUtils.removeAllSpace(asBinary.getLeft()).printTrimmed(getCursor())
-                            .equals(LSTUtils.removeAllSpace(asBinary.getRight()).printTrimmed(getCursor()))) {
-                        maybeUnwrapParentheses();
-                        j = asBinary.getLeft();
-                    }
-                } else 
-                if (asBinary.getOperator() == J.Binary.Type.Equal) {
-                    if (LSTUtils.isLiteralTrue(asBinary.getLeft())) {
-                        maybeUnwrapParentheses();
-                        j = asBinary.getRight().withPrefix(asBinary.getRight().getPrefix().withWhitespace(""));
-                    } else 
-                    if (LSTUtils.isLiteralTrue(asBinary.getRight())) {
-                        maybeUnwrapParentheses();
-                        j = asBinary.getLeft();
-                    }
-                } else 
-                if (asBinary.getOperator() == J.Binary.Type.NotEqual) {
-                    System.out.println("It's not equal");
-                    if (LSTUtils.isLiteralFalse(asBinary.getLeft())) {
-                        maybeUnwrapParentheses();
-                        j = asBinary.getRight().withPrefix(asBinary.getRight().getPrefix().withWhitespace(""));
-                    } else 
-                    if (LSTUtils.isLiteralFalse(asBinary.getRight())) {
-                        maybeUnwrapParentheses();
-                        j = asBinary.getLeft();
-                    }
+                    return false;
                 }
-                if (asBinary != j) {
-                    System.out.println("Binary changed in visit binary");
-                    getCursor().getParentTreeCursor().putMessage(MAYBE_AUTO_FORMAT_ME, "");
-                }
-                return j;
-            }
-
-            @Override
-            public J postVisit(J tree, ExecutionContext ctx) {
-                J j = super.postVisit(tree, ctx);
-                if (getCursor().pollMessage(MAYBE_AUTO_FORMAT_ME) != null) {
-                    j = new AutoFormatVisitor<>().visit(j, ctx, getCursor().getParentOrThrow());
-                }
-                return j;
-            }
-
-            @Override
-            public J visitUnary(J.Unary unary, ExecutionContext ctx) {
-                J j = super.visitUnary(unary, ctx);
-                J.Unary asUnary = (J.Unary) j;
-
-                System.out.println("visiting unary " + asUnary);
                 
-                if (asUnary.getOperator() == J.Unary.Type.Not) {
-                    System.out.println("it's a unary NOT "+asUnary.getExpression());
+                Statement elseBody = elsePart.getBody();
+                
+                if (LSTUtils.isEmpty(elseBody)) {
+                    // elsePart is empty, erasing it
+                    J.If modifiedStatement = ifStatement
+                            .withElsePart(null)
+                            .withThenPart( findAndReduceConditionBranches(thenPart, executionContext) );
+                    allBlockLines.set(ifStatementPosition, modifiedStatement);
+                                
+                    return true;
+                }
+
+                if (LSTUtils.isEmpty(thenPart)) {
+                    // the else part contains logic while the then part is empty - let's replace it with the else branch
+                    J.If modifiedStatement = 
+                            ifStatement.withIfCondition( 
+                                    MyInvertCondition.invert(ifStatement.getIfCondition(), getCursor())
+                                    )
+                                .withThenPart( 
+                                        findAndReduceConditionBranches(elseBody, executionContext) 
+                                    )
+                                .withElsePart(null);
                     
-                    if (LSTUtils.isLiteralTrue(asUnary.getExpression())) {
-                        maybeUnwrapParentheses();
-                        j = ((J.Literal) asUnary.getExpression()).withValue(false).withValueSource("false");
-                    } else 
-                    if (LSTUtils.isLiteralFalse(asUnary.getExpression())) {
-                        maybeUnwrapParentheses();
-                        j = ((J.Literal) asUnary.getExpression()).withValue(true).withValueSource("true");
-                    } else 
-                    if (asUnary.getExpression() instanceof J.Unary) {
-                        System.out.println("It's a unary expression ");
-                         if(((J.Unary) asUnary.getExpression()).getOperator() == J.Unary.Type.Not) {
-                            System.out.println("it's a NOT operator");
-                            maybeUnwrapParentheses();
-                            j = ((J.Unary) asUnary.getExpression()).getExpression();
-                        }
+                    allBlockLines.set(ifStatementPosition, modifiedStatement);
+                    
+                    return true;
+                }
+                
+                if (LSTUtils.hasGuaranteedReturn(thenPart)) {
+                    // the thenPart has guaranteed return: 
+                    // the elsePart shall get flattened.
+                    J.If modifiedStatement = 
+                                ifStatement.withIfCondition(
+                                        ifStatement.getIfCondition()
+                                        ) 
+                                    .withThenPart(
+                                        findAndReduceConditionBranches(thenPart, executionContext)
+                                        )
+                                    .withElsePart(null);
+                    
+                    allBlockLines.set(ifStatementPosition, modifiedStatement);
+                    insertFlattened(allBlockLines, ifStatementPosition+1, findAndReduceConditionBranches(elseBody, executionContext) );
+                    
+                    return true;
+                }
+                
+                if (LSTUtils.hasGuaranteedReturn(elseBody)) {
+                    // the elsePart has guaranteed return:
+                    // make it the thenPart, and flatten the thenPart instead.
+
+                    J.If modifiedStatement = 
+                                ifStatement.withIfCondition( 
+                                        MyInvertCondition.invert(ifStatement.getIfCondition(), getCursor())                                        
+                                        )
+                                    .withThenPart(
+                                        findAndReduceConditionBranches(elseBody, executionContext)
+                                        )
+                                    .withElsePart(null);
+                    
+                    allBlockLines.set(ifStatementPosition, modifiedStatement);
+                    insertFlattened(allBlockLines, ifStatementPosition+1, findAndReduceConditionBranches(thenPart, executionContext));
+                    
+                    return true;
+                }
+
+                Statement newElseBody = findAndReduceConditionBranches(elseBody, executionContext);
+                Statement newThenBody = findAndReduceConditionBranches(thenPart, executionContext);
+                
+                boolean changed = newElseBody != elseBody || newThenBody != thenPart;
+                
+                if (changed)
+                    allBlockLines.set(ifStatementPosition, 
+                                      ifStatement
+                                          .withThenPart(newThenBody)
+                                          .withElsePart( elsePart.withBody(newElseBody)) );
+                
+                return changed;
+            }
+            
+            private Statement findAndReduceConditionBranches(Statement statement, ExecutionContext executionContext) {
+                if (statement instanceof J.Block)
+                    return findAndReduceConditionBranches((J.Block) statement, executionContext);
+                
+                return statement;
+            }
+            
+            private boolean findAndReduceConditionBranches(List<Statement> statements, int position, ExecutionContext executionContext) {
+                Statement statement = statements.get(position);
+                
+                if (statement instanceof J.If) {
+                    J.If iff = (J.If)statement;
+                    return reduceConditionBranches(iff, statements, position, executionContext);
+                }
+                
+                if (statement instanceof J.Block) {
+                    Block oldBlock = (J.Block)statement;
+                    Block newBlock = findAndReduceConditionBranches(oldBlock, executionContext);
+                    if (newBlock != oldBlock) {
+                        statements.set(position, newBlock);
+                        return true;
                     }
                 }
-                if (asUnary != j) {
-                    System.out.println("unary changed in visit unary");
-                    getCursor().getParentTreeCursor().putMessage(MAYBE_AUTO_FORMAT_ME, "");
+                
+                if (statement instanceof J.Try) {
+                    J.Try tryy = (J.Try) statement;
+                    Block oldBody = tryy.getBody();
+                    Block newBody = findAndReduceConditionBranches(oldBody, executionContext);
+                    if (newBody != oldBody) {
+                        statements.set(position, tryy.withBody(newBody));
+                        return true;
+                    }
                 }
-                return j;
+                
+                return false;
             }
+            
+            private Block findAndReduceConditionBranches(Block block, ExecutionContext executionContext) {
+                if (block == null)
+                    return block;
+                
+                boolean touched = false;
 
-            /**
-             * Specifically for removing immediately-enclosing parentheses on Identifiers and Literals.
-             * This queues a potential unwrap operation for the next visit. After unwrapping something, it's possible
-             * there are more Simplifications this recipe can identify and perform, which is why visitCompilationUnit
-             * checks for any changes to the entire Compilation Unit, and if so, queues up another SimplifyBooleanExpression
-             * recipe call. This convergence loop eventually reconciles any remaining Boolean Expression Simplifications
-             * the recipe can perform.
-             */
-            private void maybeUnwrapParentheses() {
-                System.out.println("maybe unwrap parenthes");
-                Cursor c = getCursor().getParentOrThrow().getParentTreeCursor();
-                if (c.getValue() instanceof J.Parentheses) {
-                    System.out.println("will unwrap parentheses");
-                    doAfterVisit(new UnwrapParentheses<>(c.getValue()));
-                }
+                List<Statement> statements = new ArrayList<>(block.getStatements());
+                
+                for (int i=0; i < statements.size(); i++) 
+                    touched = findAndReduceConditionBranches(statements, i, executionContext) || touched;
+                
+                if (touched)
+                    return block.withStatements(statements);
+                
+                return block;
             }
-
+            
         };
     }
 }
