@@ -53,8 +53,6 @@ public class MyInvertCondition extends JavaVisitor<ExecutionContext> {
     }
 
     private Expression negate(Expression expression) {
-        System.out.println("inverting expression "+ expression);
-        
         if (expression instanceof J.InstanceOf)
             return notInstanceof((J.InstanceOf)expression);
         
@@ -66,7 +64,6 @@ public class MyInvertCondition extends JavaVisitor<ExecutionContext> {
 
     @Override
     public J visitBinary(J.Binary binary, ExecutionContext ctx) {
-        System.out.println("negating binary "+binary);
         switch (binary.getOperator()) {
             case LessThan:
                 return binary.withOperator(J.Binary.Type.GreaterThanOrEqual);

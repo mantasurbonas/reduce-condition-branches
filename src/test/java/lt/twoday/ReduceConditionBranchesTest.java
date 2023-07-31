@@ -312,9 +312,9 @@ class ReduceConditionBranchesTest implements RewriteTest {
                         int a = 0;
                         int b = 0;
                         int c = 0;
-                        if (a == 0) {
-                            if (c != 0) {
-                                c = 0; // comment
+                        if (a==0){
+                            if (c!=0){
+                                c=0; // comment
                                 return;
                             }
                             c++;
@@ -357,11 +357,12 @@ class ReduceConditionBranchesTest implements RewriteTest {
                         int a = 0;
                         int b = 0;
                         int c = 0;
-                        if (a == 0) {
+                        if (a==0){
                             c++;
-                        } else {
-                            if (a != 1) {
-                                c = 0;
+                        }
+                        else {
+                            if (a != 1){
+                                c=0;
                                 return;
                             }
                             c--;
@@ -546,6 +547,68 @@ class ReduceConditionBranchesTest implements RewriteTest {
                 );
     }
     
+     @Test
+     void shouldProperlyIndent() {
+         rewriteRun(
+                 createSpec(),
+                 java(
+ """
+ class A {
+     public void analyze(Object element) {
+         if (element != null) {
+             System.out.println("not null");
+             if (element instanceof String)
+                 System.out.println("String");
+             else if (element instanceof Integer) {
+                 System.out.println("Integer");
+             }
+         } else 
+             throw new RuntimeException("null");
+     }
+ }
+""",
+"""
+class A {
+    public void analyze(Object element) {
+        if (element == null)
+            throw new RuntimeException("null");
+        System.out.println("not null");
+        if (element instanceof String)
+            System.out.println("String");
+        else if (element instanceof Integer) {
+            System.out.println("Integer");
+        }
+    }
+}
+"""
+                    ));
+     }
+     
+     @Test
+     void shouldNotTouchIndendation() {
+         rewriteRun(
+                 createSpec(),
+                 java(
+ """
+class A {
+    public void analyze(Object element) {
+        if (element instanceof String)
+            System.out.println("String"); 
+        else if (element instanceof Integer) {
+            System.out.println("Integer");
+            
+        if (element == null)
+            if (element.equals("prop1")) {
+                System.out.println("prop1");
+            } else if (element.equals("prop2")) {
+                System.out.println("prop2");
+            }
+        }
+    }
+}
+"""             ));
+     }
+     
     @Test
     void integrationTest() {
         rewriteRun(
@@ -559,11 +622,11 @@ class A {
                 if (element instanceof String) {
                     String s = element.toString();
                     if (s.length() != 0) {
-                        if (s.startsWith("H")) {
+                        if (s.startsWith("H"))
                             System.out.println("analyzing H word");
-                        } else if (s.startsWith("A")) {
+                        else if (s.startsWith("A"))
                             System.out.println("analyzing A word");
-                        } else
+                        else
                             System.out.println("analyzing any other word");
                     } else {
                         System.out.println("empty string, will not analyze");
@@ -574,7 +637,8 @@ class A {
                         Integer i = (Integer) element;
                         System.out.println("analyzing integer " + i);
                         return;
-                    } else if (element instanceof Float) {
+                    } else 
+                    if (element instanceof Float) {
                         System.out.println("analyzing Float! " + element);
                         return;
                     } else {
@@ -582,13 +646,11 @@ class A {
                         return;
                     }
                 }
-            } else {
+            } else
                 throw new IllegalArgumentException("handling of Double is not impemented!");
-            }
-        } else {
+        } else 
             throw new IllegalArgumentException("param must not be null!");
-        }
-        
+
         System.out.println("done");
     }
 }
@@ -596,12 +658,10 @@ class A {
 """
 class A {
     public void analyze(Object element) {
-        if (element == null) {
+        if (element == null)
             throw new IllegalArgumentException("param must not be null!");
-        }
-        if (element instanceof Double) {
+        if (element instanceof Double)
             throw new IllegalArgumentException("handling of Double is not impemented!");
-        }
         if (!(element instanceof String)) { 
             if (element instanceof Integer) {
                 Integer i = (Integer) element;
@@ -620,11 +680,11 @@ class A {
             System.out.println("empty string, will not analyze");
             return;
         }
-        if (s.startsWith("H")) {
+        if (s.startsWith("H"))
             System.out.println("analyzing H word"); 
-        } else if (s.startsWith("A")) {
+        else if (s.startsWith("A"))
             System.out.println("analyzing A word");
-        } else
+        else
             System.out.println("analyzing any other word");
             
         System.out.println("done");
@@ -632,6 +692,92 @@ class A {
 }
 """
                 ));
+    }
+    
+    @Test
+    void regressionTest1() {
+        rewriteRun(
+                createSpec(),
+                java(
+"""
+class A {
+    public void initialize(String eCase, String[] initializeProps) {
+        if (eCase == null) {
+            // object is null no op
+        } else if (eCase.equals("prop1")) {
+            System.out.println("prop1");
+        } else if (eCase.equals("prop2")) {
+            System.out.println("prop2");
+        }
+    }
+}
+""",
+"""
+class A {
+    public void initialize(String eCase, String[] initializeProps) {
+        if (eCase != null)
+            if (eCase.equals("prop1")) {
+                System.out.println("prop1");
+            }
+            else if (eCase.equals("prop2")) {
+                System.out.println("prop2");
+            }
+    }
+}
+"""));
+    }
+    
+    @Test
+    void regressionTest2() {
+        rewriteRun(
+                createSpec(),
+                java(
+"""
+class A {
+    public void test(Object envelope) {
+        if (envelope == null) {
+            // Nothing to do
+        } else if (envelope instanceof String) {
+            int size = ((String) envelope).length();
+            if (size == 0) {
+                // No point
+            } else {
+                System.out.println("something");
+            }
+        } else if (envelope instanceof Integer) {
+            int size = ((Integer) envelope).intValue();
+        } else if (envelope instanceof Double) {
+            double c = ((Double) envelope).doubleValue();
+        } else {
+            // We should never get here
+            System.err.println("should not happen");
+        }
+    }
+}
+""",
+"""
+class A {
+    public void test(Object envelope) {
+        if (envelope != null) 
+            if (envelope instanceof String) {
+                int size = ((String) envelope).length();
+                if (size != 0) {
+                    System.out.println("something");
+                }
+            }
+            else if (envelope instanceof Integer) {
+                int size = ((Integer) envelope).intValue();
+            }
+            else if (envelope instanceof Double) {
+                double c = ((Double) envelope).doubleValue();
+            }
+            else {
+                // We should never get here
+                System.err.println("should not happen");
+            }
+    }
+}
+    """));
     }
     
 }

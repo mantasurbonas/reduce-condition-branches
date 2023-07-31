@@ -18,15 +18,23 @@ package lt.twoday;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.openrewrite.Cursor;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Recipe;
+import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.java.JavaVisitor;
+import org.openrewrite.java.format.TabsAndIndentsVisitor;
+import org.openrewrite.java.format.WrappingAndBracesVisitor;
+import org.openrewrite.java.style.TabsAndIndentsStyle;
+import org.openrewrite.java.style.WrappingAndBracesStyle;
+import org.openrewrite.java.style.WrappingAndBracesStyle.IfStatement;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.J.Block;
 import org.openrewrite.java.tree.J.If;
 import org.openrewrite.java.tree.J.If.Else;
 import org.openrewrite.java.tree.J.MethodDeclaration;
+import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
 
 import lombok.EqualsAndHashCode;
@@ -35,6 +43,9 @@ import lombok.Value;
 @Value
 @EqualsAndHashCode(callSuper = true)
 public class ReduceConditionBranches extends Recipe {
+
+    private static final WrappingAndBracesStyle WRAPPING_AND_BRACES_STYLE = new WrappingAndBracesStyle(new IfStatement(true));
+    private static final TabsAndIndentsStyle TABS_AND_INDENTS_STYLE = new TabsAndIndentsStyle(false, 4, 4, 8, false, new TabsAndIndentsStyle.MethodDeclarationParameters(true));
 
     public ReduceConditionBranches() {
         
@@ -70,7 +81,7 @@ public class ReduceConditionBranches extends Recipe {
                 // if you'd prefer to use the debugger instead.
             	
                 // System.out.println(TreeVisitingPrinter.printTree(getCursor()));
-            	
+                
                 return super.visitCompilationUnit(compUnit, executionContext);
             }
             
@@ -81,17 +92,27 @@ public class ReduceConditionBranches extends Recipe {
                     return super.visitMethodDeclaration(method, executionContext);
                 
                 Block reviewed = findAndReduceConditionBranches(methodBody, executionContext);
-                
-                if (reviewed != methodBody) {
-                    method = maybeAutoFormat(
-                                    method, 
-                                    method.withBody(reviewed),
-                                    executionContext);
-                    
-                    // super.doAfterVisit(new SimplifyBooleanExpression().getVisitor());
-                }
+
+                if (methodBody != reviewed)
+                    method = autoformat(method.withBody(reviewed), executionContext, getCursor());
                 
                 return super.visitMethodDeclaration(method, executionContext);
+            }
+            
+            private static boolean needsPrefix(J.If originalIf, Statement thenPart) {
+                if (thenPart instanceof J.Block)
+                    return false;
+                
+                return ! thenPart.getPrefix().getWhitespace().contains("\n");
+            }
+
+            private static Statement autoprefix(J.If iff, Statement newThenPart) {
+                return newThenPart.withPrefix(
+                        iff.getPrefix()
+                                .withWhitespace("\n" 
+                                            + iff.getPrefix().getIndent() 
+                                            + "    ")
+                                );
             }
             
             @Override
@@ -107,13 +128,26 @@ public class ReduceConditionBranches extends Recipe {
 				Statement thenPart = iff.getThenPart();
 				
 				if (LSTUtils.isEmpty(thenPart)) {
-					// the else part contains logic while the then part is empty - let's replace it with the else branch
+	                boolean needsAutoformat = false;
+                    Statement newThenPart = findAndReduceConditionBranches(elsePart.getBody(), executionContext);
+
+                    if (needsPrefix(iff, newThenPart)) {
+                        newThenPart = autoprefix(iff, newThenPart);
+                        needsAutoformat = true;
+                    }
+                    
+                    If newIfPart = iff.withIfCondition( 
+                                            MyInvertCondition.invert(iff.getIfCondition(), getCursor()) 
+                                                )
+                                        .withThenPart(newThenPart)
+                                        .withElsePart(null);
+				    
+                    if (needsAutoformat)
+                        newIfPart = autoformat(newIfPart, executionContext, getCursor());
+                    
+                    // the else part contains logic while the then part is empty - let's replace it with the else branch
 					return super.visitIf(
-							iff.withIfCondition( 
-									MyInvertCondition.invert(iff.getIfCondition(), getCursor()) 
-										)
-								.withThenPart(elsePart.getBody())
-								.withElsePart(null), 
+							newIfPart, 
 							executionContext );
 				}
 				
@@ -128,8 +162,12 @@ public class ReduceConditionBranches extends Recipe {
                 if (elsePart == null) {
                     Statement newThenPart = findAndReduceConditionBranches(thenPart, executionContext);
                     if (newThenPart != thenPart) {
+                        
+                        if (needsPrefix(ifStatement, newThenPart))
+                            newThenPart = autoprefix(ifStatement, newThenPart);
+                        
                         allBlockLines.set(ifStatementPosition, 
-                                            ifStatement.withThenPart( newThenPart )
+                                          ifStatement.withThenPart( newThenPart )
                                           );
                         return true;
                     }
@@ -139,23 +177,35 @@ public class ReduceConditionBranches extends Recipe {
                 Statement elseBody = elsePart.getBody();
                 
                 if (LSTUtils.isEmpty(elseBody)) {
+                    
                     // elsePart is empty, erasing it
-                    J.If modifiedStatement = ifStatement
-                            .withElsePart(null)
-                            .withThenPart( findAndReduceConditionBranches(thenPart, executionContext) );
-                    allBlockLines.set(ifStatementPosition, modifiedStatement);
+                    Statement newThenPart = findAndReduceConditionBranches(thenPart, executionContext);;
+                    if (newThenPart != thenPart)
+                        if (needsPrefix(ifStatement, newThenPart))
+                            newThenPart = autoprefix(ifStatement, newThenPart);
+                    
+                    allBlockLines.set(ifStatementPosition,
+                                      ifStatement
+                                        .withElsePart(null)
+                                        .withThenPart( newThenPart ));
                                 
                     return true;
                 }
 
                 if (LSTUtils.isEmpty(thenPart)) {
                     // the else part contains logic while the then part is empty - let's replace it with the else branch
+                    Statement newThenPart = findAndReduceConditionBranches(elseBody, executionContext);
+                    
+                    if (newThenPart != thenPart)
+                        if (needsPrefix(ifStatement, newThenPart))
+                            newThenPart = autoprefix(ifStatement, newThenPart);
+                    
                     J.If modifiedStatement = 
                             ifStatement.withIfCondition( 
                                     MyInvertCondition.invert(ifStatement.getIfCondition(), getCursor())
                                     )
                                 .withThenPart( 
-                                        findAndReduceConditionBranches(elseBody, executionContext) 
+                                        newThenPart
                                     )
                                 .withElsePart(null);
                     
@@ -164,15 +214,21 @@ public class ReduceConditionBranches extends Recipe {
                     return true;
                 }
                 
-                if (LSTUtils.hasGuaranteedReturn(thenPart)) {
+                if (LSTUtils.hasGuaranteedReturn(thenPart)) {                
                     // the thenPart has guaranteed return: 
                     // the elsePart shall get flattened.
+                    
+                    Statement newThenPart = findAndReduceConditionBranches(thenPart, executionContext);
+                    if (newThenPart != thenPart)
+                        if (needsPrefix(ifStatement, newThenPart))
+                            newThenPart = autoprefix(ifStatement, newThenPart);
+                    
                     J.If modifiedStatement = 
                                 ifStatement.withIfCondition(
                                         ifStatement.getIfCondition()
                                         ) 
                                     .withThenPart(
-                                        findAndReduceConditionBranches(thenPart, executionContext)
+                                        newThenPart
                                         )
                                     .withElsePart(null);
                     
@@ -186,12 +242,17 @@ public class ReduceConditionBranches extends Recipe {
                     // the elsePart has guaranteed return:
                     // make it the thenPart, and flatten the thenPart instead.
 
+                    Statement newThenPart = findAndReduceConditionBranches(elseBody, executionContext);
+                    if (newThenPart != thenPart)
+                        if (needsPrefix(ifStatement, newThenPart))
+                            newThenPart = autoprefix(ifStatement, newThenPart);
+                    
                     J.If modifiedStatement = 
                                 ifStatement.withIfCondition( 
                                         MyInvertCondition.invert(ifStatement.getIfCondition(), getCursor())                                        
                                         )
                                     .withThenPart(
-                                        findAndReduceConditionBranches(elseBody, executionContext)
+                                        newThenPart
                                         )
                                     .withElsePart(null);
                     
@@ -206,11 +267,12 @@ public class ReduceConditionBranches extends Recipe {
                 
                 boolean changed = newElseBody != elseBody || newThenBody != thenPart;
                 
-                if (changed)
+                if (changed) {
                     allBlockLines.set(ifStatementPosition, 
                                       ifStatement
                                           .withThenPart(newThenBody)
                                           .withElsePart( elsePart.withBody(newElseBody)) );
+                }
                 
                 return changed;
             }
@@ -269,6 +331,21 @@ public class ReduceConditionBranches extends Recipe {
                 return block;
             }
             
+
+            private <T extends Tree> T autoformat(T method, ExecutionContext executionContext, Cursor cursor) {
+                method = (T)new WrappingAndBracesVisitor<>(WRAPPING_AND_BRACES_STYLE)
+                        .visit(method, 
+                                executionContext, 
+                                cursor.getParentTreeCursor().fork()
+                            );
+                
+                method = (T)new TabsAndIndentsVisitor<>(TABS_AND_INDENTS_STYLE, null)
+                        .visit(method, 
+                               executionContext, 
+                               cursor.getParentTreeCursor().fork());
+
+                return method;
+            }
         };
     }
 }
