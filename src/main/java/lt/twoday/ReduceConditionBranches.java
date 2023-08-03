@@ -206,7 +206,7 @@ public class ReduceConditionBranches extends Recipe {
                 return statements;
             }
             
-            private static boolean isSingleIfMethod(J.Block block) {
+            private boolean isSingleIfMethod(J.Block block) {
                 return block.getStatements().size() == 1 && (block.getStatements().get(0) instanceof J.If);
             }
             
@@ -415,14 +415,14 @@ public class ReduceConditionBranches extends Recipe {
                 return changed;
             }
             
-            private static boolean needsPrefix(J.If originalIf, Statement thenPart) {
+            private boolean needsPrefix(J.If originalIf, Statement thenPart) {
                 if (thenPart instanceof J.Block)
                     return false;
                 
                 return ! thenPart.getPrefix().getWhitespace().contains("\n");
             }
 
-            private static Statement autoprefix(J.If iff, Statement newThenPart) {
+            private Statement autoprefix(J.If iff, Statement newThenPart) {
                 return newThenPart.withPrefix(
                         iff.getPrefix()
                                 .withWhitespace("\n" 
@@ -431,7 +431,7 @@ public class ReduceConditionBranches extends Recipe {
                                 );
             }
             
-            private static boolean needsBraces(Statement statement) {
+            private boolean needsBraces(Statement statement) {
                 if (statement instanceof J.Block)
                     return false;
                 
