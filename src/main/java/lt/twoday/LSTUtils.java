@@ -1,18 +1,14 @@
 package lt.twoday;
 
-import static org.openrewrite.Tree.randomId;
-
 import java.util.List;
 
+import org.openrewrite.Tree;
 import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
-import org.openrewrite.java.tree.J.ControlParentheses;
 import org.openrewrite.java.tree.J.If.Else;
-import org.openrewrite.java.tree.JLeftPadded;
 import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
-import org.openrewrite.marker.Markers;
 
 /**
  * helpers to manipulate Lossless-Semantic-Tree nodes
@@ -97,17 +93,6 @@ public class LSTUtils {
     	
     	return false;
     }
-
-    public static ControlParentheses<Expression> invert(ControlParentheses<Expression> ifCondition) {
-        return ifCondition.withTree(
-            new J.Unary(randomId(), 
-                        ifCondition.getPrefix(), 
-                        Markers.EMPTY, 
-                        JLeftPadded.build(J.Unary.Type.Not), 
-                        ifCondition.withPrefix(Space.EMPTY), 
-                        ifCondition.getType()))
-                ;
-    }
     
     public static boolean isLiteralTrue(Expression expression) {
         return expression instanceof J.Literal 
@@ -120,13 +105,36 @@ public class LSTUtils {
     }
     
     public static J removeAllSpace(J j) {
-        //noinspection ConstantConditions
         return new JavaIsoVisitor<Integer>() {
             @Override
             public Space visitSpace(Space space, Space.Location loc, Integer integer) {
                 return Space.EMPTY;
             }
         }.visit(j, 0);
+    }
+
+    public static boolean isThrow(Statement s) {
+        if (s == null)
+            return false;
+        
+        if (s instanceof J.Throw)
+            return true;
+        
+        if (!(s instanceof J.Block))
+            return false;
+        
+        List<Statement> statements = ((J.Block) s).getStatements();
+        if (statements == null || statements.isEmpty() || statements.size() > 1)
+            return false;
+        
+        return isThrow(statements.get(0));
+    }
+
+    public static boolean isLong(Tree s) {
+        if (s==null)
+            return false;
+
+        return AllLinesCounter.countLines(s) > 2;
     }
 
 }

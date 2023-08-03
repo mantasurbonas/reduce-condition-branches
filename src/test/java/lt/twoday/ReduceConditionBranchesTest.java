@@ -44,8 +44,7 @@ class ReduceConditionBranchesTest implements RewriteTest {
                             if (a <= 1) {
                                 System.out.println(a); // comment
                             }
-                            else 
-                            if (a <= 5) {
+                            else if (a <= 5) {
                                 System.out.println(a+1); // comment 2
                                 if (a < 9) {
                                     a++;
@@ -69,8 +68,7 @@ class ReduceConditionBranchesTest implements RewriteTest {
                             if (a <= 1) {
                                 System.out.println(a); // comment
                             }
-                            else
-                            if (a <= 5) {
+                            else if (a <= 5) {
                                 System.out.println(a+1); // comment 2
                                 if (a < 9) {
                                     a++;
@@ -115,7 +113,78 @@ class ReduceConditionBranchesTest implements RewriteTest {
     }
     
     @Test
-    void shouldFlattenUnnecessaryElseBranch() {
+    void shouldPreferBranchesWithExplicitReturns() {
+        rewriteRun(
+            createSpec(),
+            java(
+                """
+                    class A {
+                        void test() {
+                            int a = 0;
+                            if (a <= 0) {
+                                System.out.println("negative");
+                            }
+                            else {
+                                System.out.print("non-negative"); // comment
+                                return;
+                            } 
+                            System.out.println("something about negatives now");
+                        }
+                    }
+                """, 
+                """
+                    class A {
+                        void test() {
+                            int a = 0;
+                            if (a > 0) {
+                                System.out.print("non-negative"); // comment
+                                return;
+                            }
+                            System.out.println("negative");
+                            System.out.println("something about negatives now");
+                        }
+                    }
+                """
+            )
+        );
+    }
+    
+    
+    @Test
+    void shouldPreferBranchesWithExplicitThrows() {
+        rewriteRun(
+            createSpec(),
+            java(
+                """
+                    class A {
+                        void test() {
+                            int a = 0;
+                            if (a <= 0) {
+                                System.out.println("negative");
+                            }
+                            else
+                                throw new RuntimeException("non-negative");
+                            System.out.println("something about negatives now");
+                        }
+                    }
+                """, 
+                """
+                    class A {
+                        void test() {
+                            int a = 0;
+                            if (a > 0)
+                                throw new RuntimeException("non-negative");
+                            System.out.println("negative");
+                            System.out.println("something about negatives now");
+                        }
+                    }
+                """
+            )
+        );
+    }
+    
+    @Test
+    void shouldFlattenElseBranchWheneverThenBranchHasGuaranteedReturn() {
         rewriteRun(
             createSpec(),
             java(
@@ -151,7 +220,118 @@ class ReduceConditionBranchesTest implements RewriteTest {
     }
     
     @Test
-    void shouldNotFlattenConditionalWhenNotAllThenPathsHaveGuaranteedReturn() {
+    void shouldMakeEarlyReturnInSingleIfMethodsWithLargeThenBranch() {
+        rewriteRun(
+                createSpec(),
+                java(
+                    """
+                        class A {
+                            void test(int a) {
+                                if (a==0){
+                                    System.out.println("statement1");
+                                    System.out.println("statement2");
+                                    System.out.println("statement3");
+                                }
+                            }
+                        }
+                    """
+                        ,
+                    """
+                        class A {
+                            void test(int a) {
+                                if (a!=0)
+                                    return;
+                                System.out.println("statement1");
+                                System.out.println("statement2");
+                                System.out.println("statement3");
+                            }
+                        }
+                    """
+                )
+            );
+    }
+    
+    @Test
+    void shouldNotRewriteShortSingleIfMethodsWithShortThenBranch() {
+        rewriteRun(
+                createSpec(),
+                java(
+                    """
+                        class A {
+                            void test(int a) {
+                                if (a==0)
+                                    System.out.println("statement1");
+                            }
+                        }
+                    """
+                )
+            );
+    }
+    
+    @Test
+    void shouldMakeEarlyReturnInSingleElseMethodsWithLongBranch() {
+        rewriteRun(
+                createSpec(),
+                java(
+                    """
+                        class A {
+                            void test(int a) {
+                                if (a==0)
+                                    ;
+                                else {
+                                    System.out.println("statement1");
+                                    System.out.println("statement2");
+                                    System.out.println("statement3");
+                                }
+                            }
+                        }
+                    """
+                        ,
+                    """
+                        class A {
+                            void test(int a) {
+                                if (a==0)
+                                    return;
+                                System.out.println("statement1");
+                                System.out.println("statement2");
+                                System.out.println("statement3");
+                            }
+                        }
+                    """
+                )
+            );
+    }
+    
+    @Test
+    void shouldNotMakeEarlyReturnInSingleElseMethodsWithShortBranch() {
+        rewriteRun(
+                createSpec(),
+                java(
+                    """
+                        class A {
+                            void test(int a) {
+                                if (a==0)
+                                    ;
+                                else
+                                    System.out.println("statement1");
+                            }
+                        }
+                    """
+                        ,
+                    """
+                        class A {
+                            void test(int a) {
+                                if (a!=0)
+                                    System.out.println("statement1");
+                            }
+                        }
+                    """
+                )
+            );
+    }
+    
+    @Test
+    void shouldNotFlattenThenBranchWhenNotAllPathsHaveGuaranteedReturn() {
         rewriteRun(
             createSpec(),
             java(
@@ -175,7 +355,7 @@ class ReduceConditionBranchesTest implements RewriteTest {
     }
     
     @Test
-    void shouldNotFlattenConditionalWhenNotAllElsePathsHaveGuaranteedReturn() {
+    void shouldNotFlattenElseBranchWhenNotAllPathsHaveGuaranteedReturn() {
         rewriteRun(
             createSpec(),
             java(
@@ -198,49 +378,236 @@ class ReduceConditionBranchesTest implements RewriteTest {
         );
     }
         
+    
     @Test
-    void shouldPreferElsePathWhenAllSubpathsHaveExplicitReturns() {
-        rewriteRun(
-            createSpec(),
-            java(
-                """
-                    class A {
-                        void test() {
-                            int a = 0;
-                            {
-                                if (a <= 0) {
-                                    System.out.println("negative");
-                                }
-                                else {
-                                    System.out.print("non-negative"); // comment
-                                    return;
-                                } 
-                            }
-                            System.out.println("something about negatives now");
-                        }
-                    }
-                """, 
-                """
-                    class A {
-                        void test() {
-                            int a = 0;
-                            {
-                                if (a > 0) {
-                                    System.out.print("non-negative"); // comment
-                                    return;
-                                }
-                                System.out.println("negative");
-                            }
-                            System.out.println("something about negatives now");
-                        }
-                    }
-                """
-            )
-        );
+    void shouldCorrectlyInvertInstanceof() {
+       rewriteRun(
+               createSpec(),
+               java("""
+                       class A{
+                           public static void test(Object a) {
+                               if (! (a instanceof Double))
+                                   ;
+                               else
+                                   throw new RuntimeException("must not be double!");
+                           
+                               if (a instanceof String)
+                                   ;
+                               else
+                                   throw new RuntimeException("must be string!");
+                           }
+                       }
+                       """,
+                       """
+                       class A{
+                           public static void test(Object a) {
+                               if (a instanceof Double)
+                                   throw new RuntimeException("must not be double!");
+                           
+                               if (!(a instanceof String))
+                                   throw new RuntimeException("must be string!");
+                           }
+                       }
+                       """)
+               );
     }
     
     @Test
-    void shouldWorkWithMultilineIfs() {
+    void shouldCorrectlyInvertConditions() {
+       rewriteRun(
+               createSpec(),
+               java("""
+                       class A{
+                           public static void test(int a) {
+                               if (a < 0 || a > 10)
+                                   ;
+                               else
+                                   throw new RuntimeException("not in range");
+                           
+                               if (a > 0 && a < 10)
+                                   ;
+                               else
+                                   throw new RuntimeException("not in range 2");
+                           }
+                       }
+                       """,
+                       """
+                       class A{
+                           public static void test(int a) {
+                               if (!(a < 0 || a > 10))
+                                   throw new RuntimeException("not in range");
+                           
+                               if (!(a > 0 && a < 10))
+                                   throw new RuntimeException("not in range 2");
+                           }
+                       }
+                       """)
+               );
+    }
+    
+    @Test
+    void shouldProperlyIndent() {
+        rewriteRun(
+                createSpec(),
+                java(
+"""
+class A {
+    public void analyze(Object element) {
+        if (element != null) {
+            System.out.println("not null");
+            if (element instanceof String)
+                System.out.println("String");
+            else if (element instanceof Integer) {
+                System.out.println("Integer");
+            }
+        } else 
+            throw new RuntimeException("null");
+    }
+}
+""",
+"""
+class A {
+    public void analyze(Object element) {
+        if (element == null)
+            throw new RuntimeException("null");
+        System.out.println("not null");
+        if (element instanceof String)
+            System.out.println("String");
+        else if (element instanceof Integer) {
+            System.out.println("Integer");
+        }
+    }
+}
+"""
+                   ));
+    }
+    
+    @Test
+    void shouldAddThenReturnInSingleIfMethod() {
+        rewriteRun(
+                createSpec(),
+                java(
+"""
+class A {
+    public void test(int i){
+        if (i == 0)
+            ;
+        else 
+        if (i >= 1){
+            if (i >= 2){
+                System.out.println("b");
+                if (i >= 3)
+                    System.out.println("c");
+            }
+        }
+    }
+}
+""",
+"""
+class A {
+    public void test(int i){
+        if (i == 0)
+            return;
+        if (i >= 1){
+            if (i >= 2){
+                System.out.println("b");
+                if (i >= 3)
+                    System.out.println("c");
+            }
+        }
+    }
+}
+"""
+                    ));
+    }
+    
+    @Test
+    void integrationTest() {
+       rewriteRun(
+               createSpec(),
+               java(
+"""
+class A {
+   public void analyze(Object element) {
+       if (element != null) {
+           if (! (element instanceof Double)) {
+               if (element instanceof String) {
+                   String s = element.toString();
+                   if (s.length() != 0) {
+                       if (s.startsWith("H"))
+                           System.out.println("analyzing H word");
+                       else if (s.startsWith("A"))
+                           System.out.println("analyzing A word");
+                       else
+                           System.out.println("analyzing any other word");
+                   } else {
+                       System.out.println("empty string, will not analyze");
+                       return;
+                   }
+               } else { 
+                   if (element instanceof Integer) {
+                       Integer i = (Integer) element;
+                       System.out.println("analyzing integer " + i);
+                       return;
+                   } else 
+                   if (element instanceof Float) {
+                       System.out.println("analyzing Float! " + element);
+                       return;
+                   } else {
+                       System.out.println("analyzing unknown type of element " + element);
+                       return;
+                   }
+               }
+           } else
+               throw new IllegalArgumentException("handling of Double is not impemented!");
+       } else 
+           throw new IllegalArgumentException("param must not be null!");
+
+       System.out.println("done");
+   }
+}
+""",
+"""
+class A {
+    public void analyze(Object element) {
+        if (element == null)
+            throw new IllegalArgumentException("param must not be null!");
+        if (element instanceof Double)
+            throw new IllegalArgumentException("handling of Double is not impemented!");
+        if (!(element instanceof String)) {
+            if (element instanceof Integer) {
+                Integer i = (Integer) element;
+                System.out.println("analyzing integer " + i);
+                return;
+            }
+            if (element instanceof Float) {
+                System.out.println("analyzing Float! " + element);
+                return;
+            }
+            System.out.println("analyzing unknown type of element " + element);
+            return;
+        }
+        String s = element.toString();
+        if (s.length() == 0) {
+            System.out.println("empty string, will not analyze");
+            return;
+        }
+        if (s.startsWith("H"))
+            System.out.println("analyzing H word");
+        else if (s.startsWith("A"))
+            System.out.println("analyzing A word");
+        else
+            System.out.println("analyzing any other word");
+
+        System.out.println("done");
+    }
+}
+"""
+               ));
+   }
+    
+    @Test
+    void shouldPreserveMultilineConditionStatements() {
         rewriteRun(
             createSpec(),
             java(
@@ -281,9 +648,50 @@ class ReduceConditionBranchesTest implements RewriteTest {
             )
         );
     }
+    
+    @Test
+    void shouldNotReduceBlocksWhenRefactoring() {
+        rewriteRun(
+            createSpec(),
+            java(
+                """
+                    class A {
+                        void test() {
+                            int a = 0;
+                            { // block
+                                if (a <= 0) {
+                                    System.out.println("negative");
+                                }
+                                else {
+                                    System.out.print("non-negative"); // comment
+                                    return;
+                                } 
+                            } // block end
+                            System.out.println("something about negatives now");
+                        }
+                    }
+                """, 
+                """
+                    class A {
+                        void test() {
+                            int a = 0;
+                            { // block
+                                if (a > 0) {
+                                    System.out.print("non-negative"); // comment
+                                    return;
+                                }
+                                System.out.println("negative");
+                            } // block end
+                            System.out.println("something about negatives now");
+                        }
+                    }
+                """
+            )
+        );
+    }
 
     @Test
-    void shouldFixNestedIfs() {
+    void shouldRecursivelyReviewNestedIfs() {
         rewriteRun(
             createSpec(),
             java(
@@ -327,7 +735,7 @@ class ReduceConditionBranchesTest implements RewriteTest {
     }
     
     @Test
-    void shouldFixNestedElses() {
+    void shouldRecursivelyReviewNestedElseBranches() {
         rewriteRun(
             createSpec(),
             java(
@@ -375,7 +783,7 @@ class ReduceConditionBranchesTest implements RewriteTest {
     }
     
     @Test
-    void shouldReviewTryCatchBlock() {
+    void shouldRecursivelyReviewTryCatchBlock() {
         rewriteRun(
             createSpec(),
             java(
@@ -443,7 +851,7 @@ class ReduceConditionBranchesTest implements RewriteTest {
     }
     
     @Test
-    void shouldReviewNestedTryCatchBlocks() {
+    void shouldRecursivelyReviewNestedTryCatchBlocks() {
         rewriteRun(
             createSpec(),
             java(
@@ -513,76 +921,6 @@ class ReduceConditionBranchesTest implements RewriteTest {
                 """)
             );
     }
-    
-     @Test
-    void shouldCorrectlyInvertInstanceof() {
-        rewriteRun(
-                createSpec(),
-                java("""
-                        class A{
-                            public static void test(Object a) {
-                                if (! (a instanceof Double))
-                                    ;
-                                else
-                                    throw new RuntimeException("must not be double!");
-                            
-                                if (a instanceof String)
-                                    ;
-                                else
-                                    throw new RuntimeException("must be string!");
-                            }
-                        }
-                        """,
-                        """
-                        class A{
-                            public static void test(Object a) {
-                                if (a instanceof Double)
-                                    throw new RuntimeException("must not be double!");
-                            
-                                if (!(a instanceof String))
-                                    throw new RuntimeException("must be string!");
-                            }
-                        }
-                        """)
-                );
-    }
-    
-     @Test
-     void shouldProperlyIndent() {
-         rewriteRun(
-                 createSpec(),
-                 java(
- """
- class A {
-     public void analyze(Object element) {
-         if (element != null) {
-             System.out.println("not null");
-             if (element instanceof String)
-                 System.out.println("String");
-             else if (element instanceof Integer) {
-                 System.out.println("Integer");
-             }
-         } else 
-             throw new RuntimeException("null");
-     }
- }
-""",
-"""
-class A {
-    public void analyze(Object element) {
-        if (element == null)
-            throw new RuntimeException("null");
-        System.out.println("not null");
-        if (element instanceof String)
-            System.out.println("String");
-        else if (element instanceof Integer) {
-            System.out.println("Integer");
-        }
-    }
-}
-"""
-                    ));
-     }
      
      @Test
      void shouldNotTouchIndendation() {
@@ -608,91 +946,6 @@ class A {
 }
 """             ));
      }
-     
-    @Test
-    void integrationTest() {
-        rewriteRun(
-                createSpec(),
-                java(
-"""
-class A {
-    public void analyze(Object element) {
-        if (element != null) {
-            if (! (element instanceof Double)) {
-                if (element instanceof String) {
-                    String s = element.toString();
-                    if (s.length() != 0) {
-                        if (s.startsWith("H"))
-                            System.out.println("analyzing H word");
-                        else if (s.startsWith("A"))
-                            System.out.println("analyzing A word");
-                        else
-                            System.out.println("analyzing any other word");
-                    } else {
-                        System.out.println("empty string, will not analyze");
-                        return;
-                    }
-                } else { 
-                    if (element instanceof Integer) {
-                        Integer i = (Integer) element;
-                        System.out.println("analyzing integer " + i);
-                        return;
-                    } else 
-                    if (element instanceof Float) {
-                        System.out.println("analyzing Float! " + element);
-                        return;
-                    } else {
-                        System.out.println("analyzing unknown type of element " + element);
-                        return;
-                    }
-                }
-            } else
-                throw new IllegalArgumentException("handling of Double is not impemented!");
-        } else 
-            throw new IllegalArgumentException("param must not be null!");
-
-        System.out.println("done");
-    }
-}
-""",
-"""
-class A {
-    public void analyze(Object element) {
-        if (element == null)
-            throw new IllegalArgumentException("param must not be null!");
-        if (element instanceof Double)
-            throw new IllegalArgumentException("handling of Double is not impemented!");
-        if (!(element instanceof String)) { 
-            if (element instanceof Integer) {
-                Integer i = (Integer) element;
-                System.out.println("analyzing integer " + i);
-                return;
-            } 
-            if (element instanceof Float) {
-                System.out.println("analyzing Float! " + element);
-                return;
-            }
-            System.out.println("analyzing unknown type of element " + element);
-            return;
-        }
-        String s = element.toString();
-        if (s.length() == 0) {
-            System.out.println("empty string, will not analyze");
-            return;
-        }
-        if (s.startsWith("H"))
-            System.out.println("analyzing H word"); 
-        else if (s.startsWith("A"))
-            System.out.println("analyzing A word");
-        else
-            System.out.println("analyzing any other word");
-            
-        System.out.println("done");
-    }
-}
-"""
-                ));
-    }
     
     @Test
     void regressionTest1() {
@@ -715,13 +968,14 @@ class A {
 """
 class A {
     public void initialize(String eCase, String[] initializeProps) {
-        if (eCase != null)
-            if (eCase.equals("prop1")) {
-                System.out.println("prop1");
-            }
-            else if (eCase.equals("prop2")) {
-                System.out.println("prop2");
-            }
+        if (eCase == null)
+            return;
+        if (eCase.equals("prop1")) {
+            System.out.println("prop1");
+        }
+        else if (eCase.equals("prop2")) {
+            System.out.println("prop2");
+        }
     }
 }
 """));
@@ -744,6 +998,7 @@ class A {
             } else {
                 System.out.println("something");
             }
+            return;
         } else if (envelope instanceof Integer) {
             int size = ((Integer) envelope).intValue();
         } else if (envelope instanceof Double) {
@@ -758,14 +1013,47 @@ class A {
 """
 class A {
     public void test(Object envelope) {
-        if (envelope != null) 
+        if (envelope == null)
+            return;
+        if (envelope instanceof String) {
+            int size = ((String) envelope).length();
+            if (size != 0) {
+                System.out.println("something");
+            }
+            return;
+        }
+        else if (envelope instanceof Integer) {
+            int size = ((Integer) envelope).intValue();
+        }
+        else if (envelope instanceof Double) {
+            double c = ((Double) envelope).doubleValue();
+        } 
+        else {
+            // We should never get here
+            System.err.println("should not happen");
+        }
+    }
+}
+    """));
+    }
+ 
+    @Test
+    void regressionTest3() {
+        rewriteRun(
+                createSpec(),
+                java(
+"""
+class A {
+    public void test(Object envelope) {
+        if (envelope != null){
             if (envelope instanceof String) {
                 int size = ((String) envelope).length();
                 if (size != 0) {
                     System.out.println("something");
                 }
+                return;
             }
-            else if (envelope instanceof Integer) {
+            if (envelope instanceof Integer) {
                 int size = ((Integer) envelope).intValue();
             }
             else if (envelope instanceof Double) {
@@ -775,9 +1063,35 @@ class A {
                 // We should never get here
                 System.err.println("should not happen");
             }
+        }
     }
 }
-    """));
+""",
+"""
+class A {
+    public void test(Object envelope) {
+        if (envelope == null)
+            return;
+        if (envelope instanceof String) {
+            int size = ((String) envelope).length();
+            if (size != 0) {
+                System.out.println("something");
+            }
+            return;
+        }
+        if (envelope instanceof Integer) {
+            int size = ((Integer) envelope).intValue();
+        }
+        else if (envelope instanceof Double) {
+            double c = ((Double) envelope).doubleValue();
+        }
+        else {
+            // We should never get here
+            System.err.println("should not happen");
+        }
+    }
+}
+"""));
     }
     
 }

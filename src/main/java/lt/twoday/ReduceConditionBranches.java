@@ -16,6 +16,7 @@
 package lt.twoday;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.openrewrite.Cursor;
@@ -23,6 +24,7 @@ import org.openrewrite.ExecutionContext;
 import org.openrewrite.Recipe;
 import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
+import org.openrewrite.java.CountLinesVisitor;
 import org.openrewrite.java.JavaVisitor;
 import org.openrewrite.java.format.TabsAndIndentsVisitor;
 import org.openrewrite.java.format.WrappingAndBracesVisitor;
@@ -34,8 +36,8 @@ import org.openrewrite.java.tree.J.Block;
 import org.openrewrite.java.tree.J.If;
 import org.openrewrite.java.tree.J.If.Else;
 import org.openrewrite.java.tree.J.MethodDeclaration;
-import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
+import org.openrewrite.marker.Markers;
 
 import lombok.EqualsAndHashCode;
 import lombok.Value;
@@ -91,30 +93,14 @@ public class ReduceConditionBranches extends Recipe {
                 if (methodBody == null)
                     return super.visitMethodDeclaration(method, executionContext);
                 
-                Block reviewed = findAndReduceConditionBranches(methodBody, executionContext);
+                Block reviewed = reviewMethod(methodBody, executionContext);
 
                 if (methodBody != reviewed)
                     method = autoformat(method.withBody(reviewed), executionContext, getCursor());
                 
                 return super.visitMethodDeclaration(method, executionContext);
             }
-            
-            private static boolean needsPrefix(J.If originalIf, Statement thenPart) {
-                if (thenPart instanceof J.Block)
-                    return false;
-                
-                return ! thenPart.getPrefix().getWhitespace().contains("\n");
-            }
-
-            private static Statement autoprefix(J.If iff, Statement newThenPart) {
-                return newThenPart.withPrefix(
-                        iff.getPrefix()
-                                .withWhitespace("\n" 
-                                            + iff.getPrefix().getIndent() 
-                                            + "    ")
-                                );
-            }
-            
+        
             @Override
             public J visitIf(J.If iff, ExecutionContext executionContext) {
 				Else elsePart = iff.getElsePart();
@@ -136,6 +122,9 @@ public class ReduceConditionBranches extends Recipe {
                         needsAutoformat = true;
                     }
                     
+                    if (needsBraces(newThenPart))
+                        newThenPart = embrace(newThenPart);
+                    
                     If newIfPart = iff.withIfCondition( 
                                             MyInvertCondition.invert(iff.getIfCondition(), getCursor()) 
                                                 )
@@ -154,17 +143,151 @@ public class ReduceConditionBranches extends Recipe {
 				// leaving if as it was otherwise
             	return super.visitIf(iff, executionContext);
             }
+                        
+            private Block reviewMethod(Block block, ExecutionContext executionContext) {
+                if (block.getStatements().size() == 0)
+                    return block;
+
+                if (isSingleIfMethod(block)) {
+                    J.If iff = (J.If) block.getStatements().get(0);
+                    
+                    if (LSTUtils.isEmpty(iff.getThenPart()) && LSTUtils.isLong(iff.getElsePart()))
+                        return block.withStatements(createTypeAMethodBody(iff, executionContext));
+                    
+                    if (LSTUtils.isEmpty(iff.getElsePart()) && LSTUtils.isLong(iff.getThenPart()) && !LSTUtils.isThrow(iff.getThenPart()))
+                        return block.withStatements(createTypeBMethodBody(iff, executionContext));
+                    
+//                    if (!LSTUtils.isEmpty(iff.getThenPart()) && !LSTUtils.isEmpty(iff.getElsePart()))
+//                        return block.withStatements(createTypeCMethodBody(iff, executionContext));
+                }
+                
+                return findAndReduceConditionBranches(block, executionContext);
+            }
+
+            private List<Statement> createTypeAMethodBody(J.If iff, ExecutionContext executionContext) {
+                List<Statement> statements = new ArrayList<>();
+                
+                Else elsePart = iff.getElsePart();
+                J.Return newThenPart = new J.Return(Tree.randomId(), 
+                                elsePart.getPrefix(), 
+                                Markers.EMPTY,
+                                null);
+                
+                if (needsPrefix(iff, newThenPart))
+                    newThenPart = (J.Return) autoprefix(iff, newThenPart);
+                
+                iff = iff.withElsePart(null)
+                         .withThenPart(newThenPart);
+                
+                statements.add(iff);
+                insertFlattened(statements, 1, findAndReduceConditionBranches(elsePart.getBody(), executionContext) );
+                return statements;
+            }
+
+            private List<Statement> createTypeBMethodBody(J.If iff, ExecutionContext executionContext) {
+                List<Statement> statements = new ArrayList<>();
+                
+                Statement thenPart = iff.getThenPart();
+                J.Return newThenPart = new J.Return(Tree.randomId(), 
+                                thenPart.getPrefix(), 
+                                Markers.EMPTY,
+                                null);
+                
+                if (needsPrefix(iff, newThenPart))
+                    newThenPart = (J.Return) autoprefix(iff, newThenPart);
+                
+                iff = iff.withIfCondition(
+                            MyInvertCondition.invert(iff.getIfCondition(), getCursor())
+                                    )
+                          .withThenPart(newThenPart);
+                
+                statements.add(iff);
+                insertFlattened(statements, 1, findAndReduceConditionBranches(thenPart, executionContext) );
+                return statements;
+            }
             
+            private static boolean isSingleIfMethod(J.Block block) {
+                return block.getStatements().size() == 1 && (block.getStatements().get(0) instanceof J.If);
+            }
+            
+            private Statement findAndReduceConditionBranches(Statement statement, ExecutionContext executionContext) {
+                if (statement instanceof J.Block)
+                    return findAndReduceConditionBranches((J.Block) statement, executionContext);
+                
+                if (statement instanceof J.If)
+                    return findAndReduceConditionBranches((J.If) statement, executionContext);
+                
+                return statement;
+            }
+            
+            private Block findAndReduceConditionBranches(Block block, ExecutionContext executionContext) {
+                if (block == null)
+                    return block;
+                
+                boolean touched = false;
+
+                List<Statement> statements = new ArrayList<>(block.getStatements());
+                
+                for (int i=0; i < statements.size(); i++) 
+                    touched = findAndReduceConditionBranches(statements, i, executionContext) || touched;
+                
+                if (touched)
+                    return block.withStatements(statements);
+                
+                return block;
+            }
+            
+            
+            private J.If findAndReduceConditionBranches(J.If iff, ExecutionContext executionContext) {
+                if (iff == null)
+                    return iff;
+                
+                return (J.If) visitIf(iff, executionContext);
+            }
+            
+            private boolean findAndReduceConditionBranches(List<Statement> statements, int position, ExecutionContext executionContext) {
+                Statement statement = statements.get(position);
+                
+                if (statement instanceof J.If) {
+                    J.If iff = (J.If)statement;
+                    return reduceConditionBranches(iff, statements, position, executionContext);
+                }
+                
+                if (statement instanceof J.Block) {
+                    Block oldBlock = (J.Block)statement;
+                    Block newBlock = findAndReduceConditionBranches(oldBlock, executionContext);
+                    if (newBlock != oldBlock) {
+                        statements.set(position, newBlock);
+                        return true;
+                    }
+                }
+                
+                if (statement instanceof J.Try) {
+                    J.Try tryy = (J.Try) statement;
+                    Block oldBody = tryy.getBody();
+                    Block newBody = findAndReduceConditionBranches(oldBody, executionContext);
+                    if (newBody != oldBody) {
+                        statements.set(position, tryy.withBody(newBody));
+                        return true;
+                    }
+                }
+                
+                return false;
+            }        
+
             private boolean reduceConditionBranches(If ifStatement, List<Statement> allBlockLines, int ifStatementPosition, ExecutionContext executionContext) {
                 Else elsePart = ifStatement.getElsePart();
                 Statement thenPart = ifStatement.getThenPart();
                 
-                if (elsePart == null) {
+                if (elsePart == null) {                    
                     Statement newThenPart = findAndReduceConditionBranches(thenPart, executionContext);
                     if (newThenPart != thenPart) {
                         
                         if (needsPrefix(ifStatement, newThenPart))
                             newThenPart = autoprefix(ifStatement, newThenPart);
+                        
+                        if (needsBraces(newThenPart))
+                            newThenPart = embrace(newThenPart);
                         
                         allBlockLines.set(ifStatementPosition, 
                                           ifStatement.withThenPart( newThenPart )
@@ -180,9 +303,14 @@ public class ReduceConditionBranches extends Recipe {
                     
                     // elsePart is empty, erasing it
                     Statement newThenPart = findAndReduceConditionBranches(thenPart, executionContext);;
-                    if (newThenPart != thenPart)
+                    if (newThenPart != thenPart) {
+                        
                         if (needsPrefix(ifStatement, newThenPart))
                             newThenPart = autoprefix(ifStatement, newThenPart);
+                        
+                        if (needsBraces(newThenPart))
+                            newThenPart = embrace(newThenPart);
+                    }
                     
                     allBlockLines.set(ifStatementPosition,
                                       ifStatement
@@ -196,9 +324,11 @@ public class ReduceConditionBranches extends Recipe {
                     // the else part contains logic while the then part is empty - let's replace it with the else branch
                     Statement newThenPart = findAndReduceConditionBranches(elseBody, executionContext);
                     
-                    if (newThenPart != thenPart)
-                        if (needsPrefix(ifStatement, newThenPart))
-                            newThenPart = autoprefix(ifStatement, newThenPart);
+                    if (needsPrefix(ifStatement, newThenPart))
+                        newThenPart = autoprefix(ifStatement, newThenPart);
+                    
+                    if (needsBraces(newThenPart))
+                        newThenPart = embrace(newThenPart);
                     
                     J.If modifiedStatement = 
                             ifStatement.withIfCondition( 
@@ -219,9 +349,13 @@ public class ReduceConditionBranches extends Recipe {
                     // the elsePart shall get flattened.
                     
                     Statement newThenPart = findAndReduceConditionBranches(thenPart, executionContext);
-                    if (newThenPart != thenPart)
+                    if (newThenPart != thenPart) {
                         if (needsPrefix(ifStatement, newThenPart))
                             newThenPart = autoprefix(ifStatement, newThenPart);
+                        
+                        if (needsBraces(newThenPart))
+                            newThenPart = embrace(newThenPart);
+                    }
                     
                     J.If modifiedStatement = 
                                 ifStatement.withIfCondition(
@@ -243,9 +377,13 @@ public class ReduceConditionBranches extends Recipe {
                     // make it the thenPart, and flatten the thenPart instead.
 
                     Statement newThenPart = findAndReduceConditionBranches(elseBody, executionContext);
-                    if (newThenPart != thenPart)
+                    if (newThenPart != elseBody) {
                         if (needsPrefix(ifStatement, newThenPart))
                             newThenPart = autoprefix(ifStatement, newThenPart);
+                        
+                        if (needsBraces(newThenPart))
+                            newThenPart = embrace(newThenPart);
+                    }
                     
                     J.If modifiedStatement = 
                                 ifStatement.withIfCondition( 
@@ -277,61 +415,38 @@ public class ReduceConditionBranches extends Recipe {
                 return changed;
             }
             
-            private Statement findAndReduceConditionBranches(Statement statement, ExecutionContext executionContext) {
+            private static boolean needsPrefix(J.If originalIf, Statement thenPart) {
+                if (thenPart instanceof J.Block)
+                    return false;
+                
+                return ! thenPart.getPrefix().getWhitespace().contains("\n");
+            }
+
+            private static Statement autoprefix(J.If iff, Statement newThenPart) {
+                return newThenPart.withPrefix(
+                        iff.getPrefix()
+                                .withWhitespace("\n" 
+                                            + iff.getPrefix().getIndent() 
+                                            + "    ")
+                                );
+            }
+            
+            private static boolean needsBraces(Statement statement) {
                 if (statement instanceof J.Block)
-                    return findAndReduceConditionBranches((J.Block) statement, executionContext);
+                    return false;
                 
-                return statement;
+                if (statement instanceof J.Try)
+                    return false;
+                
+                return CountLinesVisitor.countLines(statement) > 2; 
             }
             
-            private boolean findAndReduceConditionBranches(List<Statement> statements, int position, ExecutionContext executionContext) {
-                Statement statement = statements.get(position);
-                
-                if (statement instanceof J.If) {
-                    J.If iff = (J.If)statement;
-                    return reduceConditionBranches(iff, statements, position, executionContext);
-                }
-                
-                if (statement instanceof J.Block) {
-                    Block oldBlock = (J.Block)statement;
-                    Block newBlock = findAndReduceConditionBranches(oldBlock, executionContext);
-                    if (newBlock != oldBlock) {
-                        statements.set(position, newBlock);
-                        return true;
-                    }
-                }
-                
-                if (statement instanceof J.Try) {
-                    J.Try tryy = (J.Try) statement;
-                    Block oldBody = tryy.getBody();
-                    Block newBody = findAndReduceConditionBranches(oldBody, executionContext);
-                    if (newBody != oldBody) {
-                        statements.set(position, tryy.withBody(newBody));
-                        return true;
-                    }
-                }
-                
-                return false;
+            private Statement embrace(Statement statement) {
+                return J.Block
+                        .createEmptyBlock()
+                            .withStatements(Arrays.asList(statement));
             }
             
-            private Block findAndReduceConditionBranches(Block block, ExecutionContext executionContext) {
-                if (block == null)
-                    return block;
-                
-                boolean touched = false;
-
-                List<Statement> statements = new ArrayList<>(block.getStatements());
-                
-                for (int i=0; i < statements.size(); i++) 
-                    touched = findAndReduceConditionBranches(statements, i, executionContext) || touched;
-                
-                if (touched)
-                    return block.withStatements(statements);
-                
-                return block;
-            }
-            
-
             private <T extends Tree> T autoformat(T method, ExecutionContext executionContext, Cursor cursor) {
                 method = (T)new WrappingAndBracesVisitor<>(WRAPPING_AND_BRACES_STYLE)
                         .visit(method, 
