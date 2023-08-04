@@ -115,7 +115,7 @@ In your Maven project's pom.xml, make this recipe module a dependency:
                     <dependency>
                         <groupId>lt.twoday</groupId>
                         <artifactId>reduce-condition-branches</artifactId>
-                        <version>1.0</version>
+                        <version>1.1</version>
                     </dependency>
                 </dependencies>
             </plugin>
