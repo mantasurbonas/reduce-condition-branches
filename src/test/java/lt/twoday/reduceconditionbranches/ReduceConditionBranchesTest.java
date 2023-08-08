@@ -1,4 +1,4 @@
-package lt.twoday;
+package lt.twoday.reduceconditionbranches;
 
 import static org.openrewrite.java.Assertions.java;
 
@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test;
 import org.openrewrite.java.JavaParser;
 import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
+
+import lt.twoday.reduceconditionbranches.ReduceConditionBranches;
 
 class ReduceConditionBranchesTest implements RewriteTest {
 
@@ -1090,6 +1092,91 @@ class A {
             System.err.println("should not happen");
         }
     }
+}
+"""));
+    }
+    
+    @Test
+    void putYourCodeHere() {
+        rewriteRun(
+                createSpec(),
+                java(
+"""
+public class SampleClass {
+
+    public void check(int x, int y) {
+        if (x > 0) {
+            
+            if (y > 0) {
+                
+                if (x + y > 10) {
+                    int z = x + y;
+                    int n = x - y;
+                    int u = x * y;
+                    int w = x / y;
+                    
+                    if (u > 100) {
+                        for (int i=0; i<x; i++) {
+                            w = w * i;
+                            w = w - i;
+                            w = w + y;
+                            w = w + u;
+                        }
+                        
+                        if (w > 10000) {
+                            throw new RuntimeException("w out of range");
+                        }
+                    }
+                } else {
+                    throw new RuntimeException("x + y should be more than 10");
+                }
+                
+            } else {
+                throw new RuntimeException("y should be positive");
+            }
+        }else {
+            throw new RuntimeException("x should be positive");
+        }
+    }
+    
+    public int convert(int x, int y) {
+        if (x > 0) {
+            
+            if (y > 0) {
+                
+                if (x + y > 10) {
+                    int z = x + y;
+                    int n = x - y;
+                    int u = x * y;
+                    int w = x / y;
+                    
+                    if (u > 100) {
+                        for (int i=0; i<x; i++) {
+                            w = w * i;
+                            w = w - i;
+                            w = w + y;
+                            w = w + u;
+                        }
+                        
+                        if (w > 10000) {
+                            throw new RuntimeException("w out of range");
+                        }
+                        
+                        return w + z;
+                    }
+                    return u + w + n;
+                } else {
+                    throw new RuntimeException("x + y should be more than 10");
+                }
+                
+            } else {
+                throw new RuntimeException("y should be positive");
+            }
+        }else {
+            throw new RuntimeException("x should be positive");
+        }
+    }
+    
 }
 """));
     }

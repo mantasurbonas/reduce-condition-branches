@@ -13,10 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package lt.twoday;
+package lt.twoday.reduceconditionbranches;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 import org.openrewrite.Cursor;
@@ -41,6 +40,9 @@ import org.openrewrite.marker.Markers;
 
 import lombok.EqualsAndHashCode;
 import lombok.Value;
+import lt.twoday.openrewrite.AllLinesCounter;
+import lt.twoday.openrewrite.LSTUtils;
+import lt.twoday.openrewrite.MyInvertCondition;
 
 @Value
 @EqualsAndHashCode(callSuper = true)
@@ -123,7 +125,7 @@ public class ReduceConditionBranches extends Recipe {
                     }
                     
                     if (needsBraces(newThenPart))
-                        newThenPart = embrace(newThenPart);
+                        newThenPart = LSTUtils.embrace(newThenPart);
                     
                     If newIfPart = iff.withIfCondition( 
                                             MyInvertCondition.invert(iff.getIfCondition(), getCursor()) 
@@ -151,10 +153,13 @@ public class ReduceConditionBranches extends Recipe {
                 if (isSingleIfMethod(block)) {
                     J.If iff = (J.If) block.getStatements().get(0);
                     
-                    if (LSTUtils.isEmpty(iff.getThenPart()) && LSTUtils.isLong(iff.getElsePart()))
+                    if (LSTUtils.isEmpty(iff.getThenPart()) 
+                        && isLong(iff.getElsePart()))
                         return block.withStatements(createTypeAMethodBody(iff, executionContext));
                     
-                    if (LSTUtils.isEmpty(iff.getElsePart()) && LSTUtils.isLong(iff.getThenPart()) && !LSTUtils.isThrow(iff.getThenPart()))
+                    if (LSTUtils.isEmpty(iff.getElsePart()) 
+                        && isLong(iff.getThenPart()) 
+                        && !LSTUtils.isThrow(iff.getThenPart()))
                         return block.withStatements(createTypeBMethodBody(iff, executionContext));
                     
 //                    if (!LSTUtils.isEmpty(iff.getThenPart()) && !LSTUtils.isEmpty(iff.getElsePart()))
@@ -164,6 +169,10 @@ public class ReduceConditionBranches extends Recipe {
                 return findAndReduceConditionBranches(block, executionContext);
             }
 
+            private boolean isLong(Tree s) {
+                return (s!=null) && AllLinesCounter.countLines(s) > 2;
+            }
+            
             private List<Statement> createTypeAMethodBody(J.If iff, ExecutionContext executionContext) {
                 List<Statement> statements = new ArrayList<>();
                 
@@ -236,8 +245,7 @@ public class ReduceConditionBranches extends Recipe {
                 
                 return block;
             }
-            
-            
+                        
             private J.If findAndReduceConditionBranches(J.If iff, ExecutionContext executionContext) {
                 if (iff == null)
                     return iff;
@@ -287,7 +295,7 @@ public class ReduceConditionBranches extends Recipe {
                             newThenPart = autoprefix(ifStatement, newThenPart);
                         
                         if (needsBraces(newThenPart))
-                            newThenPart = embrace(newThenPart);
+                            newThenPart = LSTUtils.embrace(newThenPart);
                         
                         allBlockLines.set(ifStatementPosition, 
                                           ifStatement.withThenPart( newThenPart )
@@ -309,7 +317,7 @@ public class ReduceConditionBranches extends Recipe {
                             newThenPart = autoprefix(ifStatement, newThenPart);
                         
                         if (needsBraces(newThenPart))
-                            newThenPart = embrace(newThenPart);
+                            newThenPart = LSTUtils.embrace(newThenPart);
                     }
                     
                     allBlockLines.set(ifStatementPosition,
@@ -328,7 +336,7 @@ public class ReduceConditionBranches extends Recipe {
                         newThenPart = autoprefix(ifStatement, newThenPart);
                     
                     if (needsBraces(newThenPart))
-                        newThenPart = embrace(newThenPart);
+                        newThenPart = LSTUtils.embrace(newThenPart);
                     
                     J.If modifiedStatement = 
                             ifStatement.withIfCondition( 
@@ -354,7 +362,7 @@ public class ReduceConditionBranches extends Recipe {
                             newThenPart = autoprefix(ifStatement, newThenPart);
                         
                         if (needsBraces(newThenPart))
-                            newThenPart = embrace(newThenPart);
+                            newThenPart = LSTUtils.embrace(newThenPart);
                     }
                     
                     J.If modifiedStatement = 
@@ -382,7 +390,7 @@ public class ReduceConditionBranches extends Recipe {
                             newThenPart = autoprefix(ifStatement, newThenPart);
                         
                         if (needsBraces(newThenPart))
-                            newThenPart = embrace(newThenPart);
+                            newThenPart = LSTUtils.embrace(newThenPart);
                     }
                     
                     J.If modifiedStatement = 
@@ -439,12 +447,6 @@ public class ReduceConditionBranches extends Recipe {
                     return false;
                 
                 return CountLinesVisitor.countLines(statement) > 2; 
-            }
-            
-            private Statement embrace(Statement statement) {
-                return J.Block
-                        .createEmptyBlock()
-                            .withStatements(Arrays.asList(statement));
             }
             
             private <T extends Tree> T autoformat(T method, ExecutionContext executionContext, Cursor cursor) {

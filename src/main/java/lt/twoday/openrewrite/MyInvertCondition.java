@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package lt.twoday;
+package lt.twoday.openrewrite;
 
 import org.openrewrite.Cursor;
 import org.openrewrite.ExecutionContext;
@@ -28,6 +28,11 @@ import org.openrewrite.marker.Markers;
 
 import static org.openrewrite.Tree.randomId;
 
+/***
+ * properly inverts conditions, including the instance of.
+ * 
+ * (a copy from a standard openrewrite InvertCondition with a special case for instanceof)
+ */
 public class MyInvertCondition extends JavaVisitor<ExecutionContext> {
 
     @SuppressWarnings("unchecked")

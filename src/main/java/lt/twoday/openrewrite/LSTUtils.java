@@ -1,5 +1,6 @@
-package lt.twoday;
+package lt.twoday.openrewrite;
 
+import java.util.Arrays;
 import java.util.List;
 
 import org.openrewrite.Tree;
@@ -129,12 +130,10 @@ public class LSTUtils {
         
         return isThrow(statements.get(0));
     }
-
-    public static boolean isLong(Tree s) {
-        if (s==null)
-            return false;
-
-        return AllLinesCounter.countLines(s) > 2;
+    
+    public static Statement embrace(Statement statement) {
+        return J.Block
+                .createEmptyBlock()
+                    .withStatements(Arrays.asList(statement));
     }
-
 }
