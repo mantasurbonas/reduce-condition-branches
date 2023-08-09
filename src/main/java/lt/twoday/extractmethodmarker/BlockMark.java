@@ -21,6 +21,7 @@ public class BlockMark implements Marker {
     }
     
     public BlockMark clone(UUID uuid) {
+        // System.out.println("creating new block mark with UUID "+uuid);
         BlockMark ret = new BlockMark(uuid);
             ret.statementCount = 0;
             ret.nestingDepth = this.nestingDepth;
@@ -59,7 +60,7 @@ public class BlockMark implements Marker {
 
     @Override
     public String toString() {
-        return "loc: " + statementCount
+        return uuid + " loc: " + statementCount
                 + " depth: " + nestingDepth 
                 + " fits: " + fitsForExtractMethod 
                 + " hasMarkedChildren: " + hasMarkedChildren;

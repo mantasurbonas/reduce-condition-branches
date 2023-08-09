@@ -4,6 +4,7 @@ import org.openrewrite.ExecutionContext;
 import org.openrewrite.Recipe;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.java.JavaIsoVisitor;
+import org.openrewrite.java.JavaVisitor;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.J.MethodDeclaration;
 import org.openrewrite.java.tree.Statement;
@@ -28,7 +29,7 @@ public class MarkExtractMethodBlocksRecipe  extends Recipe {
     
     public static boolean isRefactorable(Statement statement) {
         return (statement instanceof J.If)
-            || (statement instanceof J.Switch)
+            || (statement instanceof J.Case)
             || (statement instanceof J.ForEachLoop)
             || (statement instanceof J.DoWhileLoop)
             || (statement instanceof J.ForLoop)
@@ -45,8 +46,10 @@ public class MarkExtractMethodBlocksRecipe  extends Recipe {
             @Override
             public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext p) {
                 
+                // step1: mark code blocks within this method
                 method = new BlockComplexityVisitor().visitMethodDeclaration(method, p);
                 
+                // step2: put appropriate the comments on the marked blocks
                 inMethod = true;
                 MethodDeclaration ret = (J.MethodDeclaration) super.visitMethodDeclaration(method, p);
                 inMethod = false;
@@ -54,9 +57,9 @@ public class MarkExtractMethodBlocksRecipe  extends Recipe {
             }
             
             @Override
-            public J.Block visitBlock(J.Block block, ExecutionContext p) {
+            public J.Block visitBlock(J.Block block, ExecutionContext p) {            
                 if (!inMethod)
-                    return (J.Block) super.visitBlock(block, p); // NOT visiting anything above method
+                    return (J.Block) super.visitBlock(block, p); // NOT visiting anything anything above method
                 
                 BlockMark complexityMarker = getComplexityMarker(block);
                 if (complexityMarker == null)
@@ -75,9 +78,7 @@ public class MarkExtractMethodBlocksRecipe  extends Recipe {
                 if (markers == null) 
                     return null;
 
-                return markers
-                        .findFirst(BlockMark.class)
-                        .orElse(null);
+                return markers.findFirst(BlockMark.class).orElse(null);
             }
             
         };

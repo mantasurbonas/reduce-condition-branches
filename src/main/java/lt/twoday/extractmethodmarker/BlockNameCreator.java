@@ -6,12 +6,16 @@ import org.openrewrite.java.tree.J.Block;
 
 import lt.twoday.openrewrite.ChatGPTClient;
 
-/*** creates a function name for a code block */
+/*** creates a function name for a code block to extract */
 public class BlockNameCreator {
     
     private static final String CHAT_GPT_PROMPT = "Please suggest a better name for this Java function. Be laconic, only output the suggested function name without any comments and explanations";
 
+    static int nameNumber = 0;
+    
     public static String createMethodName(Block block){
+        return "method"+nameNumber++;
+        /*
         String javaCode = toJavaCodeString(block);
         
         javaCode = stringify(javaCode);
@@ -21,9 +25,11 @@ public class BlockNameCreator {
             return new ChatGPTClient().ask(question, 0f);
         }catch(Exception e) {
             e.printStackTrace();
+            
             System.exit(1);
             return null;
         }
+        */
     }
 
     private static String toJavaCodeString(Block block) {
@@ -31,12 +37,17 @@ public class BlockNameCreator {
         
         new JavaPrinter<>().visit(block, out);
                 
-        return out.getOut();
+        return out.getOut().trim();
     }
 
     private static String stringify(String javaCode) {
         return String.join("\\n",
-                javaCode.replace("\"", "\\\"")
+                javaCode
+                        .replace("\\", "\\\\")
+                        .replace("\"", "\\\"")
+                        .replace("\r\n", "\n")
+                        .replace("\n", "\\n")
+                        .replace("\t", "    ")
                     .split("\n")
                     );
     }

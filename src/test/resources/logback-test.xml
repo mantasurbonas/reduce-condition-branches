@@ -8,10 +8,11 @@
             </Pattern>
         </layout>
     </appender>
-    
-    <logger name="lt.twoday.*" level="TRACE" /> 
 
-    <root level="debug">
+    <logger name="lt.twoday" level="TRACE" /> 
+
+    <root level="trace">
         <appender-ref ref="CONSOLE"/>
     </root>
+
 </configuration>

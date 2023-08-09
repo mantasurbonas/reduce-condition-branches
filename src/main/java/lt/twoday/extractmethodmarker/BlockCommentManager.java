@@ -10,6 +10,8 @@ import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.J.Block;
 import org.openrewrite.java.tree.TextComment;
 import org.openrewrite.marker.Markers;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class BlockCommentManager {
 
@@ -18,6 +20,7 @@ public class BlockCommentManager {
     private static final String REFACTORING_BLOCK_BEGIN_COMMENT = "CONSIDER BLOCK REFACTORING ";
     private static final String REFACTORING_BLOCK_END_COMMENT = "END REFACTORING BLOCK ";
 
+    private static final Logger log  = LoggerFactory.getLogger(BlockCommentManager.class);
     
     public static boolean isMarkedAsFailedRefactoring(J.Block block) {
         for (Comment a: block.getPrefix().getComments()) {
@@ -37,7 +40,7 @@ public class BlockCommentManager {
         }
         return false;
     }
-    
+        
     public static J.Block markAsFailedRefactoring(J.Block block){
         return block
                 .withPrefix(
@@ -79,6 +82,10 @@ public class BlockCommentManager {
         }
         return false;
     }
+
+    public static boolean isMarked(Block block) {
+        return isMarkedAsFailedRefactoring(block) || isMarkedForRefactoring(block);
+    }
     
     public static Block markDebugInfo(J.Block block, BlockMark debugInfo) {
         return block
@@ -88,6 +95,13 @@ public class BlockCommentManager {
     }
     
     public static Block markForRefactoring(J.Block block) {
+        log.trace("adding refactoring comments on the block {}", block.getId());
+        
+        if (isMarkedForRefactoring(block)) {
+            log.error("block marking error #5: {} already has a refactoring comment", block.getId());
+            return block;
+        }
+        
         return block
                 .withPrefix(
                     block.getPrefix().withComments(makeRefactoringPreComment(block))
@@ -123,6 +137,5 @@ public class BlockCommentManager {
                             Markers.EMPTY)
                         );
     }
-
 
 }
