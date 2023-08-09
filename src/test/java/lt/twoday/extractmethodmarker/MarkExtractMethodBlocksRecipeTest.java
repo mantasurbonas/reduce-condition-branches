@@ -164,8 +164,7 @@ private String convertMGRSToUTM(String MGRSString)
 //}
 //                """));
 //    }
-    
-    
+  
     @Test
     void smallTest() {
         rewriteRun(
@@ -228,11 +227,14 @@ class A{
         try{
             if (true){
                 while(false){
-                    int a=0;
-                    int b=1;
-                    int c=3;
-                    int d=4;
-                    int e=5;
+                    try{
+                        int a=0;
+                        int b=1;
+                        int c=3;
+                        int d=4;
+                        int e=5;
+                    }catch(Exception e){
+                    }
                 }
             }
         }catch(Exception e){

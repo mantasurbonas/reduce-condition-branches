@@ -3,6 +3,7 @@ package lt.twoday.extractmethodmarker;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Tree;
@@ -137,6 +138,14 @@ public class BlockComplexityVisitor extends JavaVisitor<ExecutionContext> {
                                 );
         }
         
+        if (statement instanceof J.Case) {
+            J.Case ccase = (J.Case)statement;
+            return ccase
+                    .withStatements(
+                            assignBlockMarkersRecursively(ccase.getStatements(), blockComplexity)
+                        );
+        }
+        
         return statement;
     }
 
@@ -177,12 +186,11 @@ public class BlockComplexityVisitor extends JavaVisitor<ExecutionContext> {
         }
         
         if (! blockMarker.hasMarkedChildren) {
-            //if (MarkExtractMethodBlocksRecipe.isRefactorable(parent)) {
+            if (MarkExtractMethodBlocksRecipe.isRefactorable(parent)) {
                 if ( complexityCriteria.apply(blockMarker.statementCount, blockMarker.nestingDepth) ) {
-                    System.out.println("marking block {} fit for extract method" + block.getId());
                     blockMarker.setFitsForExtractMethod();
                 }
-            //}
+            }
         }
 
         return block
@@ -199,4 +207,14 @@ public class BlockComplexityVisitor extends JavaVisitor<ExecutionContext> {
                 );
     }
     
+    private List<Statement> assignBlockMarkersRecursively(List<Statement> statements, BlockMark blockComplexity) {
+        if (statements == null)
+            return statements;
+        
+        return statements.stream()
+                .map(st -> assignBlockMarkersRecursively(st, blockComplexity))
+                .collect(Collectors.toList());
+    }
+
+
 }

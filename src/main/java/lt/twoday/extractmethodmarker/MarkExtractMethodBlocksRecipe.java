@@ -32,8 +32,10 @@ public class MarkExtractMethodBlocksRecipe  extends Recipe {
             || (statement instanceof J.Case)
             || (statement instanceof J.ForEachLoop)
             || (statement instanceof J.DoWhileLoop)
+            || (statement instanceof J.WhileLoop)
             || (statement instanceof J.ForLoop)
-            || (statement instanceof J.Lambda);
+            || (statement instanceof J.Lambda)
+            || (statement instanceof J.Block);
     }
     
     @Override
