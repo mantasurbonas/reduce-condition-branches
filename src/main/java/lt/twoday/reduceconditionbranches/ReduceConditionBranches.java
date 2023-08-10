@@ -23,6 +23,7 @@ import org.openrewrite.ExecutionContext;
 import org.openrewrite.Recipe;
 import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
+import org.openrewrite.internal.lang.Nullable;
 import org.openrewrite.java.CountLinesVisitor;
 import org.openrewrite.java.JavaVisitor;
 import org.openrewrite.java.format.TabsAndIndentsVisitor;
@@ -153,17 +154,35 @@ public class ReduceConditionBranches extends Recipe {
                 if (isSingleIfMethod(block)) {
                     J.If iff = (J.If) block.getStatements().get(0);
                     
-                    if (LSTUtils.isEmpty(iff.getThenPart()) 
-                        && isLong(iff.getElsePart()))
+                    Statement thenPart = iff.getThenPart();
+                    Else elsePart = iff.getElsePart();
+                    
+                    boolean thenEmpty = LSTUtils.isEmpty(thenPart);
+                    boolean elseEmpty = LSTUtils.isEmpty(elsePart);
+                    
+                    boolean thenLong = isLong(thenPart);
+                    boolean elseLong = isLong(elsePart);
+                    
+                    boolean thenThrows = LSTUtils.isThrow(thenPart);
+                    boolean elseThrows = LSTUtils.isThrow(elsePart);
+                    
+                    if (thenEmpty && elseLong)
                         return block.withStatements(createTypeAMethodBody(iff, executionContext));
                     
-                    if (LSTUtils.isEmpty(iff.getElsePart()) 
-                        && isLong(iff.getThenPart()) 
-                        && !LSTUtils.isThrow(iff.getThenPart()))
+                    if (elseEmpty && thenLong && !thenThrows)
                         return block.withStatements(createTypeBMethodBody(iff, executionContext));
                     
-//                    if (!LSTUtils.isEmpty(iff.getThenPart()) && !LSTUtils.isEmpty(iff.getElsePart()))
-//                        return block.withStatements(createTypeCMethodBody(iff, executionContext));
+                    if (elseThrows && !thenThrows)
+                        return block.withStatements(createTypeBMethodBody(iff, executionContext));
+                    
+                    if (thenThrows)
+                        return block.withStatements(createTypeCMethodBody(iff, executionContext));
+                    
+                    if (!elseEmpty && !elseLong && thenLong)
+                        return block.withStatements(createTypeBMethodBody(iff, executionContext));
+                    
+                    if (!thenEmpty && !elseEmpty)
+                        return block.withStatements(createTypeCMethodBody(iff, executionContext));
                 }
                 
                 return findAndReduceConditionBranches(block, executionContext);
@@ -196,27 +215,100 @@ public class ReduceConditionBranches extends Recipe {
             private List<Statement> createTypeBMethodBody(J.If iff, ExecutionContext executionContext) {
                 List<Statement> statements = new ArrayList<>();
                 
-                Statement thenPart = iff.getThenPart();
-                J.Return newThenPart = new J.Return(Tree.randomId(), 
-                                thenPart.getPrefix(), 
-                                Markers.EMPTY,
-                                null);
-                
-                if (needsPrefix(iff, newThenPart))
-                    newThenPart = (J.Return) autoprefix(iff, newThenPart);
+                Statement thenPart = findAndReduceConditionBranches(iff.getThenPart(), executionContext);
+                Else elsePart = findAndReduceConditionBranches(iff.getElsePart(), executionContext);
                 
                 iff = iff.withIfCondition(
                             MyInvertCondition.invert(iff.getIfCondition(), getCursor())
                                     )
-                          .withThenPart(newThenPart);
+                          .withThenPart(withReturn(iff, elsePart))
+                          .withElsePart(null);
                 
                 statements.add(iff);
-                insertFlattened(statements, 1, findAndReduceConditionBranches(thenPart, executionContext) );
+                insertFlattened(statements, 1, thenPart );
+                return statements;
+            }
+
+            private J.Return createReturn(Statement parent) {
+                return new J.Return(Tree.randomId(), 
+                                parent.getPrefix(), 
+                                Markers.EMPTY,
+                                null);
+            }
+            
+            private List<Statement> createTypeCMethodBody(J.If iff, ExecutionContext executionContext) {
+                List<Statement> statements = new ArrayList<>();
+                
+                Statement thenPart = findAndReduceConditionBranches(iff.getThenPart(), executionContext);
+                
+                statements.add( iff.withElsePart(null).withThenPart(withReturn(thenPart)) );
+                
+                Statement elsePart = findAndReduceConditionBranches(iff.getElsePart().getBody(), executionContext);
+                
+                insertFlattened(statements, 1, elsePart );
+                
                 return statements;
             }
             
+//            private List<Statement> createTypeDMethodBody(J.If iff, ExecutionContext executionContext) {
+//                List<Statement> statements = new ArrayList<>();
+//                
+//                Statement thenPart = iff.getThenPart();
+//                Else elsePart = iff.getElsePart();
+//                
+//                iff = iff.withIfCondition(
+//                            MyInvertCondition.invert(iff.getIfCondition(), getCursor())
+//                                        )
+//                        .withElsePart(null)
+//                        .withThenPart(elsePart.getBody());
+//                
+//                statements.add( iff);
+//                
+//                insertFlattened(statements, 1, findAndReduceConditionBranches(thenPart, executionContext) );
+//                
+//                return statements;
+//            }
+            
+            private Statement withReturn(J.If parent, Else elsePart) {
+                if (elsePart == null)
+                    return createReturn(parent);
+                
+                Statement elseBody = elsePart.getBody();
+                if (LSTUtils.isEmpty(elseBody))
+                    return createReturn(parent);
+                
+                return withReturn(elseBody);
+            }
+            
+            private Statement withReturn(Statement statement) {
+                if (LSTUtils.hasGuaranteedReturn(statement))
+                    return statement;
+                
+                Block block;
+                if (statement instanceof J.Block)
+                    block = (J.Block)statement;
+                else
+                    block = LSTUtils.embrace(statement);
+                
+                Statement parent = statement;
+                if (block.getStatements().size() > 0)
+                    parent = block.getStatements().get(0);
+                
+                List<Statement> statements = new ArrayList<>(block.getStatements());
+                statements.add(createReturn(parent));
+                
+                return block.withStatements(statements);
+            }
+
             private boolean isSingleIfMethod(J.Block block) {
                 return block.getStatements().size() == 1 && (block.getStatements().get(0) instanceof J.If);
+            }
+            
+            private Else findAndReduceConditionBranches(Else elsePart, ExecutionContext executionContext) {
+                if (LSTUtils.isEmpty(elsePart))
+                    return elsePart;
+                
+                return elsePart.withBody(findAndReduceConditionBranches(elsePart.getBody(), executionContext));
             }
             
             private Statement findAndReduceConditionBranches(Statement statement, ExecutionContext executionContext) {
@@ -225,6 +317,14 @@ public class ReduceConditionBranches extends Recipe {
                 
                 if (statement instanceof J.If)
                     return findAndReduceConditionBranches((J.If) statement, executionContext);
+                
+                if (statement instanceof J.Try) {
+                    J.Try tryy = (J.Try) statement;
+                    Block oldBody = tryy.getBody();
+                    Block newBody = findAndReduceConditionBranches(oldBody, executionContext);
+                    if (newBody != oldBody)
+                        return tryy.withBody(newBody);
+                }
                 
                 return statement;
             }

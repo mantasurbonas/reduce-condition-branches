@@ -131,9 +131,13 @@ public class LSTUtils {
         return isThrow(statements.get(0));
     }
     
-    public static Statement embrace(Statement statement) {
+    public static J.Block embrace(Statement statement) {
         return J.Block
                 .createEmptyBlock()
                     .withStatements(Arrays.asList(statement));
+    }
+
+    public static boolean isThrow(Else elsePart) {
+        return elsePart != null && elsePart.getBody() != null && isThrow(elsePart.getBody());
     }
 }

@@ -2,6 +2,8 @@ package lt.twoday.reduceconditionbranches;
 
 import static org.openrewrite.java.Assertions.java;
 
+import java.io.File;
+import java.util.ArrayList;
 import java.util.function.Consumer;
 
 import org.junit.jupiter.api.Test;
@@ -446,7 +448,143 @@ class ReduceConditionBranchesTest implements RewriteTest {
     }
     
     @Test
-    void shouldProperlyIndent() {
+    void shouldCreateTypeAMethod() {
+        rewriteRun(
+                createSpec(),
+                java(
+"""
+class A {
+    public void analyze(Object element) {
+        if (element != null)
+            ;
+        else {
+            System.out.println("a");
+            System.out.println("b");
+            System.out.println("c");
+            System.out.println("d");
+        }
+    }
+}
+""",
+"""
+class A {
+    public void analyze(Object element) {
+        if (element != null)
+            return;
+        System.out.println("a");
+        System.out.println("b");
+        System.out.println("c");
+        System.out.println("d");
+    }
+}
+"""));
+    }
+    
+    @Test
+    void shouldCreateTypeBMethod() {
+        rewriteRun(
+                createSpec(),
+                java(
+"""
+class A {
+    public void analyze(Object element) {
+        if (element != null){
+            System.out.println("a");
+            System.out.println("b");
+            System.out.println("c");
+            System.out.println("d");
+        }else {
+        }
+    }
+}
+""",
+"""
+class A {
+    public void analyze(Object element) {
+        if (element == null)
+            return;
+        System.out.println("a");
+        System.out.println("b");
+        System.out.println("c");
+        System.out.println("d");
+    }
+}
+"""));
+    }
+    
+    @Test
+    void shouldCreateTypeCMethod() {
+        rewriteRun(
+                createSpec(),
+                java(
+"""
+class A {
+    public void analyze(Object element) {
+        if (element != null){
+            System.out.println("a");
+            throw new RuntimeException("");            
+        }else {
+            System.out.println("a");
+            System.out.println("b");
+            System.out.println("c");
+            System.out.println("d");
+        }
+    }
+}
+""",
+"""
+class A {
+    public void analyze(Object element) {
+        if (element != null){
+            System.out.println("a");
+            throw new RuntimeException("");            
+        }
+        System.out.println("a");
+        System.out.println("b");
+        System.out.println("c");
+        System.out.println("d");
+    }
+}
+"""));
+    }
+    
+    @Test
+    void shouldCreateTypeCMethodWithReturn() {
+        rewriteRun(
+                createSpec(),
+                java(
+"""
+class A {
+    public void analyze(Object element) {
+        if (element != null){
+            System.out.println("a");       
+        }else {
+            System.out.println("a");
+            System.out.println("b");
+            System.out.println("c");
+            System.out.println("d");
+        }
+    }
+}
+""",
+"""
+class A {
+    public void analyze(Object element) {
+        if (element != null){
+            System.out.println("a");
+            return;            
+        }
+        System.out.println("a");
+        System.out.println("b");
+        System.out.println("c");
+        System.out.println("d");
+    }
+}
+"""));
+    }
+    
+    @Test
+    void shouldPrioritizeThrowBranch() {
         rewriteRun(
                 createSpec(),
                 java(
@@ -923,7 +1061,7 @@ class A {
     }
      
      @Test
-     void shouldNotTouchIndendation() {
+     void shouldSimplifySingleIfMethod() {
          rewriteRun(
                  createSpec(),
                  java(
@@ -934,17 +1072,38 @@ class A {
             System.out.println("String"); 
         else if (element instanceof Integer) {
             System.out.println("Integer");
-            
-        if (element == null)
-            if (element.equals("prop1")) {
-                System.out.println("prop1");
-            } else if (element.equals("prop2")) {
-                System.out.println("prop2");
+            if (element == null)
+                if (element.equals("prop1")) {
+                    System.out.println("prop1");
+                } else if (element.equals("prop2")) {
+                    System.out.println("prop2");
+                }
             }
+    }
+}
+""",
+"""
+class A {
+    public void analyze(Object element) {
+        if (element instanceof String){
+            System.out.println("String");
+            return;
+        }
+        if (element instanceof Integer) {
+            System.out.println("Integer");
+            if (element == null)
+                if (element.equals("prop1")) {
+                    System.out.println("prop1");
+                }
+                else if (element.equals("prop2")) {
+                    System.out.println("prop2");
+                }
         }
     }
 }
-"""             ));
+"""
+                         
+                         ));
      }
     
     @Test
@@ -1093,6 +1252,36 @@ class A {
 }
 """));
     }
+        
+    
+/*** not supported refactoring yet:
+    @Test
+    void shouldReduceMultipleIfElseIfs() {
+        rewriteRun(
+                createSpec(),
+                java(
+"""
+class A{
+    void test(int i) {
+        if (i==0) {
+            System.out.println(i);
+        }else
+        if (i==1) {
+            System.out.println(i);
+        }else
+        if (i==2) {
+            System.out.println(i);
+        }else 
+        if (i==3){
+            System.out.println(i);
+        }else {
+            System.out.println("more than 3");
+        }
+    }
+}
+"""));
+    }
+*/
     
     @Test
     void putYourCodeHere() {

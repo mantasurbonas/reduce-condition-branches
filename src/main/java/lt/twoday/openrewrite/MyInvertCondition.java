@@ -21,7 +21,7 @@ import org.openrewrite.InMemoryExecutionContext;
 import org.openrewrite.Tree;
 import org.openrewrite.internal.lang.Nullable;
 import org.openrewrite.java.JavaVisitor;
-import org.openrewrite.java.cleanup.SimplifyBooleanExpression;
+import org.openrewrite.java.cleanup.SimplifyBooleanExpressionVisitor;
 import org.openrewrite.java.tree.*;
 import org.openrewrite.java.tree.J.Unary;
 import org.openrewrite.marker.Markers;
@@ -54,7 +54,7 @@ public class MyInvertCondition extends JavaVisitor<ExecutionContext> {
             t = super.visit(tree, ctx);
         }
 
-        return (J) new SimplifyBooleanExpression().getVisitor().visit(t, ctx, getCursor().getParentOrThrow());
+        return (J) new SimplifyBooleanExpressionVisitor().visit(t, ctx, getCursor().getParentOrThrow());
     }
 
     private Expression negate(Expression expression) {

@@ -105,17 +105,18 @@ In your Maven project's pom.xml, make this recipe module a dependency:
             <plugin>
                 <groupId>org.openrewrite.maven</groupId>
                 <artifactId>rewrite-maven-plugin</artifactId>
-                <version>5.2.4</version>
+                <version>5.4.1</version>
                 <configuration>
                     <activeRecipes>
-                        <recipe>lt.twoday.ReduceConditionBranches</recipe>
+                      <recipe>lt.twoday.reduceconditionbranches.ReduceConditionBranches</recipe>
+                      <recipe>lt.twoday.extractmethodmarker.MarkExtractMethodBlocksRecipe</recipe>
                     </activeRecipes>
                 </configuration>
                 <dependencies>
                     <dependency>
                         <groupId>lt.twoday</groupId>
                         <artifactId>reduce-condition-branches</artifactId>
-                        <version>1.1</version>
+                        <version>1.2</version>
                     </dependency>
                 </dependencies>
             </plugin>
@@ -139,11 +140,11 @@ repositories {
 }
 
 dependencies {
-    rewrite("lt.twoday:reduce-condition-branches:1.0")
+    rewrite("lt.twoday:reduce-condition-branches:1.2")
 }
 
 rewrite {
-    activeRecipe("lt.twoday.ReduceConditionBranches")
+    activeRecipe("lt.twoday.reduceconditionbranches.ReduceConditionBranches")
 }
 ```
 
